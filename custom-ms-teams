@@ -3,7 +3,6 @@
 # This integrates Wazuh with Microsoft Teams, alerts generated on Wazuh are sent to a Microsoft Teams Channel using an Incoming Webhook
 # Based on the Slack integration using Webhooks 
 
-
 import json 
 import sys 
 import time 
