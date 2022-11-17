@@ -1,6 +1,8 @@
 #!/var/ossec/framework/python/bin/python3
 # Created by Shuffle, AS. <frikky@shuffler.io>. and changed a little bit by Carlos Dams
+# This integrates Wazuh with Microsoft Teams, alerts generated on Wazuh are sent to a Microsoft Teams Channel using an Incoming Webhook
 # Based on the Slack integration using Webhooks 
+
 
 import json 
 import sys 
