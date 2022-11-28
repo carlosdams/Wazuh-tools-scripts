@@ -1,2 +1,2 @@
 # Tools and Scripts from Wazuh
-# This will be updated later to provide additional information
+- [custom-ms-teams](https://github.com/carlosdams/Wazuh-tools-scripts/blob/main/custom-ms-teams) is an integration with Microsoft Teams, this allows Wazuh to send alerts to a Microsoft Team channel, script was created by another user, credits can be found in the script
