@@ -150,7 +150,10 @@ Resources:
     Type: AWS::EC2::KeyPair
     Properties:
       KeyName: wazuhKeyLab
-
+      Tags: 
+        - Key: "Name"
+          Value: !Join [ '', [ "Key Pair from " , !Sub "${AWS::StackName}"] ] 
+          
 # Wazuh Server AIO
 
   WazuhServerInstance:
