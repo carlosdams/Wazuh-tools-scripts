@@ -1,5 +1,5 @@
 # CloudFormation template for latest Wazuh AIO AMI with a CentOS7 and a Windows Server 2022 Wazuh Agents
-# version 11/29/2022 
+# version 2023-06-08 
 Parameters:
   WorkstationIp:
     Type: String
@@ -257,7 +257,7 @@ Resources:
       UserData: !Base64 
         'Fn::Sub': |
           <powershell>
-          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.3.10-1.msi -OutFile $env:tmp\wazuh-agent-4.3.10.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.3.10.msi /q WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='please123' WAZUH_REGISTRATION_SERVER='172.20.0.10' 
+          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.3-1.msi -OutFile $env:tmp\wazuh-agent-4.4.3.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.3.msi /q WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='please123' WAZUH_REGISTRATION_SERVER='172.20.0.10' 
           #at least 10 seconds are necessary for the service to be available to start
           Start-Sleep -Seconds 90  
           NET START WazuhSvc

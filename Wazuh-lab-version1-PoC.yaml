@@ -1,7 +1,7 @@
 # CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
 # However, PoC Guide states a Windows 11 machine but it is simpler to get a Windows Server in AWS
-# version 12/14/2022 
+# version 2023-06-08
 Mappings: 
   RegionMap:
     us-east-1:
@@ -348,7 +348,7 @@ Resources:
       UserData: !Base64 
         'Fn::Sub': |
           <powershell>
-          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.3.10-1.msi -OutFile $env:tmp\wazuh-agent-4.3.10.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.3.10.msi /q WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='please123' WAZUH_REGISTRATION_SERVER='172.20.0.10' 
+          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.3-1.msi -OutFile $env:tmp\wazuh-agent-4.4.3.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.3.msi /q WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='please123' WAZUH_REGISTRATION_SERVER='172.20.0.10' 
           #at least 10 seconds are necessary for the service to be available to start
           Start-Sleep -Seconds 100  
           NET START WazuhSvc
