@@ -130,6 +130,10 @@ Resources:
       GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
       VpcId: !Ref LabVPC
       SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: tcp
           FromPort: '22'
           ToPort: '22'
