@@ -3,7 +3,7 @@
 Parameters:
   WorkstationIp:
     Type: String
-    Description: The IP address of the workstation that can RDP and SSH into the instances. Have 0.0.0.0/0 to allow any IP address.
+    Description: The IP address of the workstation that can ping, RDP and SSH into the instances. Have 0.0.0.0/0 to allow any IP address.
     Default: '0.0.0.0/0'
     MinLength: 9
     MaxLength: 18
@@ -150,6 +150,10 @@ Resources:
       GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
       VpcId: !Ref LabVPC
       SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: tcp
           FromPort: '22'
           ToPort: '22'
@@ -183,7 +187,55 @@ Resources:
         - IpProtocol: tcp
           FromPort: '3389'
           ToPort: '3389'
-          CidrIp: !Sub ${WorkstationIp} 
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+
+# To be able to use the same Security Groups (as a source) created on the previos part
+
+  WazuhLinuxSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxSecurityGroup
+
+  WazuhLinuxSecurityGroupSelfReferenceSSHFromLinuxSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxSecurityGroup
+
+  WazuhLinuxSecurityGroupSelfReferenceSSHFromWindowsSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhLinuxSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhWindowsSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
 
 # Linux Wazuh Agent
 
