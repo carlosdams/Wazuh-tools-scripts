@@ -38,6 +38,29 @@ Parameters:
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
     ConstraintDescription: must be a valid EC2 instance type.
+  OpenWazuhAPIToWorkStationIp:
+    Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  OpenOpenSearchAPIToWorkStationIp:
+    Description: If Yes is selected the OpenSearch API (port 9200) will be reachable from the WorkstationIp specified.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
+Conditions:
+  OpenWazuhAPI: !Equals 
+    - !Ref OpenWazuhAPIToWorkStationIp
+    - 'Yes'
+  OpenOpenSearchAPI: !Equals 
+    - !Ref OpenOpenSearchAPIToWorkStationIp
+    - 'Yes'
+
 Resources:
   LabVPC:
     Type: AWS::EC2::VPC
@@ -150,14 +173,28 @@ Resources:
           FromPort: '443'
           ToPort: '443' #to access Wazuh Web UI
           CidrIp: 0.0.0.0/0
-        #- IpProtocol: tcp #Delete #s to enable Wazuh Server API 
-        #  FromPort: '55000'
-        #  ToPort: '55000'
-        #  CidrIp: 0.0.0.0/0
-        #- IpProtocol: tcp #Delete #s to enable Wazuh Indexer API
-        #  FromPort: '9200'
-        #  ToPort: '9200'
-        #  CidrIp: 0.0.0.0/0
+
+  WazuhLinuxSecurityGroupWazuhAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenWazuhAPI
+    DependsOn: WazuhLinuxSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxSecurityGroup
+      IpProtocol: tcp
+      FromPort: 55000
+      ToPort: 55000
+      CidrIp: !Sub ${WorkstationIp}
+
+  WazuhLinuxSecurityGroupOpenSearchAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenOpenSearchAPI
+    DependsOn: WazuhLinuxSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      CidrIp: !Sub ${WorkstationIp}
 
 Outputs:
   VpcId:
