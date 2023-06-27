@@ -241,14 +241,14 @@ Resources:
   WazuhWindowsSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
-      GroupDescription: Enable RDP access via port 3389
+      GroupDescription: Enable RDP access via port 3389 and ICMPv4
       VpcId: !Ref LabVPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '3389'
           ToPort: '3389'
           CidrIp: !Sub ${WorkstationIp} 
-        - IpProtocol: icmp
+        - IpProtocol: icmp #It might be necessary to enable in Windows firewall of the Windows Server the inbound rule "Virtual Machine Monitoring (Echo Request - ICMPv4-In)"
           FromPort: 8
           ToPort: -1
           CidrIp: !Sub ${WorkstationIp}
