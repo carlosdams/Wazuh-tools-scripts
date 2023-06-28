@@ -1,0 +1,582 @@
+# CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
+# Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
+# However, PoC Guide states a Windows 11 machine but it is simpler to get a Windows Server in AWS
+# version 2023-06-08
+Mappings: 
+  RegionMap:
+    us-east-1:
+      HVMREDHAT9: ami-05723c3b9cf4bf4ff
+    us-east-2:
+      HVMREDHAT9: ami-08d616b7fbe4bb9d0
+    us-west-1:
+      HVMREDHAT9: ami-029465c1f346dd34f
+    us-west-2:
+      HVMREDHAT9: ami-0b6ce9bcd0a2f720d
+    ca-central-1:
+      HVMREDHAT9: ami-093dddc44bec52167
+    eu-west-1:
+      HVMREDHAT9: ami-0f11fb3119dc9fc60
+    eu-west-2:
+      HVMREDHAT9: ami-023cd3f0d10fb8a9c
+    eu-west-3:
+      HVMREDHAT9: ami-0c226b3aa389adbef
+    ap-northeast-1:
+      HVMREDHAT9: ami-083594d506bfbc152
+    ap-northeast-2:
+      HVMREDHAT9: ami-07cc74f198bb9e86a
+    ap-southeast-1:
+      HVMREDHAT9: ami-0b2aec26bb1a5169d
+    ap-southeast-2:
+      HVMREDHAT9: ami-003cf7280eac7a28a
+    ap-south-1:
+      HVMREDHAT9: ami-069d9fecd19e7ed40
+    sa-east-1:
+      HVMREDHAT9: ami-07509c78b1456cc84
+Parameters:
+  WorkstationIp:
+    Type: String
+    Description: The IP address of the workstation that can RDP and SSH into the instances. Have 0.0.0.0/0 to allow any IP address.
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+  PasswordWazuhServerAgentEnrollment:
+    Type: String
+    Description: Password required during the enrollment process of Wazuh Agents https://documentation.wazuh.com/current/user-manual/agent-enrollment/security-options/using-password-authentication.html
+    Default: 'please123'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: "(\\w{8,64})"
+    ConstraintDescription: 'Must have at least 8 characters and a maximum of 64 characters. A word character: [a-zA-Z_0-9]'
+  AmiAliasWazuhServer:
+    Description: AMI alias of Wazuh
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-khkzdapwa4w62/latest' #An specific version can be selected sometimes by changing "latest" for the version, ex: "v4.3.8"
+  AmiAliasLinuxAgent1:
+    Description: AMI alias of Ubuntu 22.04 Agent
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-lfutkwiaknxsk/latest' 
+#  AmiAliasLinuxAgent2:
+#    Description: AMI alias of Red Hat Enterprise Linux 9.0 Agent # I have not found the AMI alias
+#    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+#    Default: '' 
+  AmiAliasWindowsAgent1:
+    Description: AMI alias of Windows Agent Server 2022 base
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-tj2wcsymhcvj2/latest' 
+  CidrBlockVPC: 
+    Description: CIDR block of the VPC
+    Type: 'String'
+    Default: '172.20.0.0/16'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+  CidrBlockSubnet: 
+    Description: CIDR block of the Public Subnet
+    Type: 'String'
+    Default: '172.20.0.0/24'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+  PrivateAddressWazuhServer:
+    Description: Private IP Address of Wazuh Server
+    Type: 'String'
+    Default: '172.20.0.10'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent1:
+    Description: Private IP Address of Linux Agent-1
+    Type: 'String'
+    Default: '172.20.0.20'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent2:
+    Description: Private IP Address of Linux Agent-2
+    Type: 'String'
+    Default: '172.20.0.30'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressWindowsAgent1:
+    Description: Private IP Address of Windows Agent-1
+    Type: 'String'
+    Default: '172.20.0.40'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  WazuhServerInstanceType:
+    Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
+    Type: String
+    Default: c5a.large
+    AllowedValues:
+    - c5a.large #bare minimum 2vCPU and 4GB RAM
+    - c5a.xlarge #recommended 4vCPU and 8GB RAM
+    - t2.medium #bare minimum 2vCPU and 4GB RAM, cheapest option 
+    - t2.large #2vCPU and 8GB RAM 
+    - t2.xlarge #4vCPU and 16GB RAM
+    ConstraintDescription: must be a valid EC2 instance type.
+  WindowsAgentInstanceType:
+    Description: EC2 Instance type of Windows Server 2022 #m4.xlarge vendor recommended (very expensive), t2.medium to save money
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+    - m4.xlarge #vendor recommended 4vCPU and 16GB RAM
+    - t2.medium #minimum 2vCPU and 4GB RAM, cheapest option 
+    - t2.large #2vCPU and 8GB RAM 
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  OpenWazuhAPIToWorkStationIp:
+    Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  OpenOpenSearchAPIToWorkStationIp:
+    Description: If Yes is selected the OpenSearch API (port 9200) will be reachable from the WorkstationIp specified. It might be neccessary to edit file /etc/wazuh-indexer/opensearch.yml to expose the API
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
+Conditions:
+  OpenWazuhAPI: !Equals 
+    - !Ref OpenWazuhAPIToWorkStationIp
+    - 'Yes'
+  OpenOpenSearchAPI: !Equals 
+    - !Ref OpenOpenSearchAPIToWorkStationIp
+    - 'Yes'
+
+Resources:
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CidrBlockVPC
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+  Subnet:  
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref CidrBlockSubnet
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ '-', [ !Ref LabVPC, 'igw']]
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref InternetGateway
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref Subnet
+  KeyNameToUse:
+    Description: New EC2 Key pair that will be saved on Parameter Store
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: wazuhKeyLab
+      Tags: 
+        - Key: "Name"
+          Value: !Join [ '', [ "Key Pair from " , !Sub "${AWS::StackName}"] ] 
+          
+# Wazuh Server AIO
+
+  WazuhServerInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: !Ref WazuhServerInstanceType
+      ImageId: !Ref AmiAliasWazuhServer
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          PrivateIpAddress: !Ref PrivateAddressWazuhServer
+          GroupSet:
+            - Ref: WazuhManagerSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          sed -i 's/<use_password>no/<use_password>yes/' /var/ossec/etc/ossec.conf
+          echo "${PasswordWazuhServerAgentEnrollment}" > /var/ossec/etc/authd.pass
+          #recommended some time to allow it to start well
+          sleep 50
+          systemctl restart wazuh-manager
+
+  WazuhServerEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties: 
+      Domain: vpc
+      InstanceId: !Ref WazuhServerInstance
+  WazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '1515'
+          ToPort: '1515'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '1514'
+          ToPort: '1514'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443' #to access Wazuh Web UI
+          CidrIp: 0.0.0.0/0
+
+  WazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable RDP access via port 3389 and ICMPv4
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3389'
+          ToPort: '3389'
+          CidrIp: !Sub ${WorkstationIp} 
+        - IpProtocol: icmp #It might be necessary to enable in Windows firewall of the Windows Server the inbound rule "Virtual Machine Monitoring (Echo Request - ICMPv4-In)"
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhManagerSecurityGroupWazuhAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenWazuhAPI
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 55000
+      ToPort: 55000
+      CidrIp: !Sub ${WorkstationIp}
+
+  WazuhIndexerSecurityGroupOpenSearchAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenOpenSearchAPI
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      CidrIp: !Sub ${WorkstationIp}
+      
+# To be able to use the same Security Groups (as a source) created on the previos part
+
+  WazuhManagerSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromManagerSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromWindowsSG:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhWindowsSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhManagerSecurityGroupPingFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupSSHFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupPingFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+# Linux Wazuh Agent 1 Ubuntu
+
+  LinuxAgent1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: t2.small
+      ImageId: !Ref AmiAliasLinuxAgent1
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Linux Ubuntu Agent from " , !Ref AmiAliasLinuxAgent1] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent1
+          GroupSet:
+            - Ref: WazuhLinuxAgentSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          hostnamectl set-hostname --static linux1-ubuntu
+          echo "preserve_hostname: true" >> /etc/cloud/cloud.cfg
+          echo "PATH=$PATH:$HOME/bin:/var/ossec/bin" >> /root/.bashrc
+          curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
+          echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
+          apt update
+          
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' apt install -y wazuh-agent
+          sleep 75
+          systemctl daemon-reload
+          systemctl enable wazuh-agent
+          systemctl start wazuh-agent
+          
+          sed -i "s/^deb/#deb/" /etc/apt/sources.list.d/wazuh.list
+          apt-get update
+    DependsOn: WazuhServerInstance
+
+  LinuxAgent1EIP:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+      InstanceId: !Ref LinuxAgent1
+    DependsOn: WazuhServerInstance
+
+# Linux Wazuh Agent 2 RedHat
+
+  LinuxAgent2:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: t2.small
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - HVMREDHAT9
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Linux RHEL Agent from " , !FindInMap [RegionMap, !Ref "AWS::Region", HVMREDHAT9]] ]
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent2
+          GroupSet:
+            - Ref: WazuhLinuxAgentSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          hostnamectl set-hostname --static linux2-rhel
+          echo "preserve_hostname: true" >> /etc/cloud/cloud.cfg
+          echo "PATH=$PATH:$HOME/bin:/var/ossec/bin" >> /root/.bashrc
+          rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
+          cat > /etc/yum.repos.d/wazuh.repo << EOF
+          [wazuh]
+          gpgcheck=1
+          gpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH
+          enabled=1
+          name=EL-\$releasever - Wazuh
+          baseurl=https://packages.wazuh.com/4.x/yum/
+          protect=1
+          EOF
+          
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' yum install -y wazuh-agent
+          sleep 85
+          systemctl daemon-reload
+          systemctl enable wazuh-agent
+          systemctl start wazuh-agent
+          
+          sed -i "s/^enabled=1/enabled=0/" /etc/yum.repos.d/wazuh.repo
+    DependsOn: WazuhServerInstance
+
+  LinuxAgent2EIP:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+      InstanceId: !Ref LinuxAgent2
+    DependsOn: WazuhServerInstance
+
+# Windows Wazuh Agent
+
+  WindowsAgent1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: !Ref WindowsAgentInstanceType
+      ImageId: !Ref AmiAliasWindowsAgent1
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Wazuh Windows Agent from " , !Ref AmiAliasWindowsAgent1] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref Subnet
+          PrivateIpAddress: !Ref PrivateAddressWindowsAgent1
+          GroupSet:
+            - Ref: WazuhWindowsSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          <powershell>
+          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.4-1.msi -OutFile $env:tmp\wazuh-agent-4.4.4.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.4.msi /q WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' WAZUH_REGISTRATION_SERVER='${PrivateAddressWazuhServer}' 
+          #at least 10 seconds are necessary for the service to be available to start
+          Start-Sleep -Seconds 100  
+          NET START WazuhSvc
+          </powershell>
+    DependsOn: WazuhServerInstance
+
+  WindowsAgent1EIP:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+      InstanceId: !Ref WindowsAgent1
+    DependsOn: WazuhServerInstance
+
+Outputs:
+  VpcId:
+    Description: The VPC ID
+    Value: !Ref LabVPC
+  WazuhServerPublicIP:
+    Description: The Public IP address of Wazuh Server
+    Value: !GetAtt WazuhServerEIP.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-WazuhServer-PublicIp"
+  WazuhServerDNS:
+    Description: The link of Wazuh Server
+    Value: !Join [ '', ["https://", !GetAtt WazuhServerInstance.PublicDnsName]]
+    Export:
+      Name: !Sub "${AWS::StackName}-WazuhServer-DomainName"
+  LinuxAgentUbuntuPublicIP:
+    Description: The Public IP address of Linux Agent Ubuntu 22.04
+    Value: !GetAtt LinuxAgent1EIP.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-LinuxAgentUbuntu-PublicIp"
+  LinuxAgentRHELPublicIP:
+    Description: The Public IP address of Linux Agent RHEL 9
+    Value: !GetAtt LinuxAgent2EIP.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-LinuxAgentRHEL-PublicIp"
+  WindowsAgentPublicIP:
+    Description: The Public IP address of the Windows Agent
+    Value: !GetAtt WindowsAgent1EIP.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-WindowsAgent-PublicIp"
+  WazuhServerID:
+    Description: Password of Wazuh Web UI
+    Value: !Ref WazuhServerInstance
