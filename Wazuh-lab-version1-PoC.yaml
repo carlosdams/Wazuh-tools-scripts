@@ -69,26 +69,50 @@ Parameters:
     Description: CIDR block of the VPC
     Type: 'String'
     Default: '172.20.0.0/16'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
   CidrBlockSubnet: 
     Description: CIDR block of the Public Subnet
     Type: 'String'
     Default: '172.20.0.0/24'
-  PAWazuhServer:
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+  PrivateAddressWazuhServer:
     Description: Private IP Address of Wazuh Server
     Type: 'String'
     Default: '172.20.0.10'
-  PALinuxAgent1:
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent1:
     Description: Private IP Address of Linux Agent-1
     Type: 'String'
     Default: '172.20.0.20'
-  PALinuxAgent2:
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent2:
     Description: Private IP Address of Linux Agent-2
     Type: 'String'
     Default: '172.20.0.30'
-  PAWindowsAgent1:
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressWindowsAgent1:
     Description: Private IP Address of Windows Agent-1
     Type: 'String'
     Default: '172.20.0.40'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
   WazuhServerInstanceType:
     Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
     Type: String
@@ -201,7 +225,7 @@ Resources:
         - DeleteOnTermination: 'true'
           DeviceIndex: '0'
           SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PAWazuhServer
+          PrivateIpAddress: !Ref PrivateAddressWazuhServer
           GroupSet:
             - Ref: WazuhLinuxSecurityGroup
       UserData: !Base64 
@@ -342,7 +366,7 @@ Resources:
         - DeleteOnTermination: 'true'
           DeviceIndex: '0'
           SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PALinuxAgent1
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent1
           GroupSet:
             - Ref: WazuhLinuxSecurityGroup
       UserData: !Base64 
@@ -355,7 +379,7 @@ Resources:
           echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
           apt update
           
-          WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' apt install -y wazuh-agent
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' apt install -y wazuh-agent
           sleep 75
           systemctl daemon-reload
           systemctl enable wazuh-agent
@@ -390,7 +414,7 @@ Resources:
         - DeleteOnTermination: 'true'
           DeviceIndex: '0'
           SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PALinuxAgent2
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent2
           GroupSet:
             - Ref: WazuhLinuxSecurityGroup
       UserData: !Base64 
@@ -410,7 +434,7 @@ Resources:
           protect=1
           EOF
           
-          WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' yum install -y wazuh-agent
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' yum install -y wazuh-agent
           sleep 85
           systemctl daemon-reload
           systemctl enable wazuh-agent
@@ -441,13 +465,13 @@ Resources:
         - DeleteOnTermination: 'true'
           DeviceIndex: '0'
           SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PAWindowsAgent1
+          PrivateIpAddress: !Ref PrivateAddressWindowsAgent1
           GroupSet:
             - Ref: WazuhWindowsSecurityGroup
       UserData: !Base64 
         'Fn::Sub': |
           <powershell>
-          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.3-1.msi -OutFile $env:tmp\wazuh-agent-4.4.3.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.3.msi /q WAZUH_MANAGER='172.20.0.10' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' WAZUH_REGISTRATION_SERVER='172.20.0.10' 
+          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.4-1.msi -OutFile $env:tmp\wazuh-agent-4.4.4.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.4.msi /q WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' WAZUH_REGISTRATION_SERVER='${PrivateAddressWazuhServer}' 
           #at least 10 seconds are necessary for the service to be available to start
           Start-Sleep -Seconds 100  
           NET START WazuhSvc
