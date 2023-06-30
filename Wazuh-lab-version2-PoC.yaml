@@ -441,6 +441,38 @@ Resources:
       ToPort: 22
       SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
+  WazuhLinuxAgentSecurityGroupSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferenceSSHFromLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
   WazuhManagerSecurityGroupAgentEnrollmentFromWazuhLinuxAgentSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
     DependsOn: 

@@ -47,6 +47,30 @@ Parameters:
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
     ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  CidrBlockWazuhAgentsEnrollment: 
+    Description: CIDR block of the network that new Wazuh Agents can enroll (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsCommunication
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhAgentsCommunication: 
+    Description: CIDR block of the network that new Wazuh Agents can communicate (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsEnrollment
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhWebUIAccess: 
+    Description: CIDR block of the network that can access the Wazuh Web UI
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
   WazuhServerInstanceType:
     Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
     Type: String
@@ -184,15 +208,15 @@ Resources:
         - IpProtocol: tcp
           FromPort: '1515'
           ToPort: '1515'
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhAgentsEnrollment}
         - IpProtocol: tcp
           FromPort: '1514'
           ToPort: '1514'
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
         - IpProtocol: tcp
           FromPort: '443'
           ToPort: '443' #to access Wazuh Web UI
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhWebUIAccess}
 
   WazuhLinuxSecurityGroupWazuhAPI:
     Type: 'AWS::EC2::SecurityGroupIngress'
