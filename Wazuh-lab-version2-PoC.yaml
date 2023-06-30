@@ -2,6 +2,9 @@
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
 # However, PoC Guide states a Windows 11 machine but it is simpler to get a Windows Server in AWS
 # version 2023-06-08
+# Difference with Wazuh-lab-version1-PoC is that the Wazuh Manager has its own Security Group, it is not the same as the one for Linux Wazuh Agents. 
+# Also, this option allows to choose the networks where new Wazuh Agents can enroll-communicate and the network the Wazuh Web UI can be accessed from.
+# Making this lab a more isolated option
 Mappings: 
   RegionMap:
     us-east-1:
@@ -35,7 +38,7 @@ Mappings:
 Parameters:
   WorkstationIp:
     Type: String
-    Description: The IP address of the workstation that can RDP and SSH into the instances. Have 0.0.0.0/0 to allow any IP address.
+    Description: The IP address of the workstation that can RDP and SSH into the instances. Keep 0.0.0.0/0 to allow any IP address.
     Default: '0.0.0.0/0'
     MinLength: 9
     MaxLength: 18
@@ -72,7 +75,7 @@ Parameters:
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
-    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
   CidrBlockSubnet: 
     Description: CIDR block of the Public Subnet
     Type: 'String'
@@ -80,7 +83,7 @@ Parameters:
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
-    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
   PrivateAddressWazuhServer:
     Description: Private IP Address of Wazuh Server
     Type: 'String'
@@ -113,6 +116,30 @@ Parameters:
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
     ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  CidrBlockWazuhAgentsEnrollment: 
+    Description: CIDR block of the network that new Wazuh Agents can enroll (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsCommunication
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhAgentsCommunication: 
+    Description: CIDR block of the network that new Wazuh Agents can communicate (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsEnrollment
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhWebUIAccess: 
+    Description: CIDR block of the network that can access the Wazuh Web UI
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
   WazuhServerInstanceType:
     Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
     Type: String
@@ -227,7 +254,7 @@ Resources:
           SubnetId: !Ref Subnet
           PrivateIpAddress: !Ref PrivateAddressWazuhServer
           GroupSet:
-            - Ref: WazuhLinuxSecurityGroup
+            - Ref: WazuhManagerSecurityGroup
       UserData: !Base64 
         'Fn::Sub': |
           #!/bin/bash -xe
@@ -243,7 +270,7 @@ Resources:
     Properties: 
       Domain: vpc
       InstanceId: !Ref WazuhServerInstance
-  WazuhLinuxSecurityGroup:
+  WazuhManagerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
@@ -260,15 +287,30 @@ Resources:
         - IpProtocol: tcp
           FromPort: '1515'
           ToPort: '1515'
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhAgentsEnrollment}
         - IpProtocol: tcp
           FromPort: '1514'
           ToPort: '1514'
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
         - IpProtocol: tcp
           FromPort: '443'
           ToPort: '443' #to access Wazuh Web UI
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Sub ${CidrBlockWazuhWebUIAccess}
+
+  WazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
 
   WazuhWindowsSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -285,23 +327,23 @@ Resources:
           ToPort: -1
           CidrIp: !Sub ${WorkstationIp}
 
-  WazuhLinuxSecurityGroupWazuhAPI:
+  WazuhManagerSecurityGroupWazuhAPI:
     Type: 'AWS::EC2::SecurityGroupIngress'
     Condition: OpenWazuhAPI
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 55000
       ToPort: 55000
       CidrIp: !Sub ${WorkstationIp}
 
-  WazuhLinuxSecurityGroupOpenSearchAPI:
+  WazuhIndexerSecurityGroupOpenSearchAPI:
     Type: 'AWS::EC2::SecurityGroupIngress'
     Condition: OpenOpenSearchAPI
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 9200
       ToPort: 9200
@@ -309,33 +351,33 @@ Resources:
       
 # To be able to use the same Security Groups (as a source) created on the previos part
 
-  WazuhLinuxSecurityGroupSelfReferencePing:
+  WazuhManagerSecurityGroupSelfReferencePing:
     Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: icmp
       FromPort: 8
       ToPort: -1
-      SourceSecurityGroupId: !Ref WazuhLinuxSecurityGroup
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
-  WazuhLinuxSecurityGroupSelfReferenceSSHFromLinuxSG:
+  WazuhManagerSecurityGroupSelfReferenceSSHFromManagerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
-      SourceSecurityGroupId: !Ref WazuhLinuxSecurityGroup
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
-  WazuhLinuxSecurityGroupSelfReferenceSSHFromWindowsSG:
+  WazuhManagerSecurityGroupSelfReferenceSSHFromWindowsSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
     DependsOn: 
-    - WazuhLinuxSecurityGroup
+    - WazuhManagerSecurityGroup
     - WazuhWindowsSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 22
       ToPort: 22
@@ -350,7 +392,135 @@ Resources:
       FromPort: 8
       ToPort: -1
       SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
-      
+
+  WazuhManagerSecurityGroupPingFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupSSHFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupPingFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferenceSSHFromLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
 # Linux Wazuh Agent 1 Ubuntu
 
   LinuxAgent1:
@@ -368,7 +538,7 @@ Resources:
           SubnetId: !Ref Subnet
           PrivateIpAddress: !Ref PrivateAddressLinuxAgent1
           GroupSet:
-            - Ref: WazuhLinuxSecurityGroup
+            - Ref: WazuhLinuxAgentSecurityGroup
       UserData: !Base64 
         'Fn::Sub': |
           #!/bin/bash -xe
@@ -416,7 +586,7 @@ Resources:
           SubnetId: !Ref Subnet
           PrivateIpAddress: !Ref PrivateAddressLinuxAgent2
           GroupSet:
-            - Ref: WazuhLinuxSecurityGroup
+            - Ref: WazuhLinuxAgentSecurityGroup
       UserData: !Base64 
         'Fn::Sub': |
           #!/bin/bash -xe

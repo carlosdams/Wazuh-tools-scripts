@@ -1,6 +1,6 @@
-# CloudFormation template for latest Wazuh AIO AMI with no Agents. 
+# CloudFormation template for latest Wazuh AIO AMI with no Agents but Security Groups already created for Linux and Windows. 
 #Wazuh AMI info: https://documentation.wazuh.com/current/deployment-options/amazon-machine-images/amazon-machine-images.html
-#version 06/08/2023
+#version 06/30/2023
 #This builds the VPC 172.20.0.0/16 and subnet 172.20.0.0/24 assigning IP address 172.20.0.10 to Wazuh Server
 Parameters:
   WorkstationIp:
@@ -82,6 +82,7 @@ Parameters:
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
     ConstraintDescription: must be a valid EC2 instance type.
+
   OpenWazuhAPIToWorkStationIp:
     Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
     Default: 'No'
@@ -175,7 +176,7 @@ Resources:
           SubnetId: !Ref Subnet
           PrivateIpAddress: !Ref PrivateAddressWazuhServer
           GroupSet:
-            - Ref: WazuhLinuxSecurityGroup
+            - Ref: WazuhManagerSecurityGroup
       UserData: !Base64 
         'Fn::Sub': |
           #!/bin/bash -xe
@@ -191,7 +192,7 @@ Resources:
     Properties: 
       Domain: vpc
       InstanceId: !Ref WazuhServerInstance
-  WazuhLinuxSecurityGroup:
+  WazuhManagerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
@@ -218,27 +219,229 @@ Resources:
           ToPort: '443' #to access Wazuh Web UI
           CidrIp: !Sub ${CidrBlockWazuhWebUIAccess}
 
-  WazuhLinuxSecurityGroupWazuhAPI:
+  WazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable RDP access via port 3389 and ICMPv4
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3389'
+          ToPort: '3389'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: icmp #It might be necessary to enable in Windows firewall of the Windows Server the inbound rule "Virtual Machine Monitoring (Echo Request - ICMPv4-In)"
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhManagerSecurityGroupWazuhAPI:
     Type: 'AWS::EC2::SecurityGroupIngress'
     Condition: OpenWazuhAPI
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 55000
       ToPort: 55000
       CidrIp: !Sub ${WorkstationIp}
 
-  WazuhLinuxSecurityGroupOpenSearchAPI:
+  WazuhIndexerSecurityGroupOpenSearchAPI:
     Type: 'AWS::EC2::SecurityGroupIngress'
     Condition: OpenOpenSearchAPI
-    DependsOn: WazuhLinuxSecurityGroup
+    DependsOn: WazuhManagerSecurityGroup
     Properties:
-      GroupId: !Ref WazuhLinuxSecurityGroup
+      GroupId: !Ref WazuhManagerSecurityGroup
       IpProtocol: tcp
       FromPort: 9200
       ToPort: 9200
       CidrIp: !Sub ${WorkstationIp}
+
+# To be able to use the same Security Groups (as a source) created on the previos part
+
+  WazuhManagerSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhWindowsSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhManagerSecurityGroupPingFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupSSHFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupPingFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferenceSSHFromLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
 
 Outputs:
   VpcId:
