@@ -4,7 +4,7 @@
 # Difference with Wazuh-lab-version1-PoC is that the Wazuh Manager has its own Security Group, it is not the same as the one for Linux Wazuh Agents. 
 # Also, this option allows to choose the networks where new Wazuh Agents can enroll-communicate and the network the Wazuh Web UI can be accessed from.
 # Making this lab a more isolated option
-# version 2023-06-08
+#version 2023-07-01
 # Author: Carlos Dams
 Mappings: 
   RegionMap:
@@ -152,6 +152,13 @@ Parameters:
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
     ConstraintDescription: must be a valid EC2 instance type.
+  WazuhServerInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Wazuh Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
   WindowsAgentInstanceType:
     Description: EC2 Instance type of Windows Server 2022 #m4.xlarge vendor recommended (very expensive), t2.medium to save money
     Type: String
@@ -161,6 +168,27 @@ Parameters:
     - t2.medium #minimum 2vCPU and 4GB RAM, cheapest option 
     - t2.large #2vCPU and 8GB RAM 
     ConstraintDescription: must be a valid EC2 instance type.
+  WindowsAgentInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Windows Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  LinuxAgent1InstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Linux Agent 1 Ubuntu.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  LinuxAgent2InstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Linux Agent 2 RHEL9.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
 
   OpenWazuhAPIToWorkStationIp:
     Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
@@ -184,6 +212,14 @@ Conditions:
   OpenOpenSearchAPI: !Equals 
     - !Ref OpenOpenSearchAPIToWorkStationIp
     - 'Yes'
+  WazuhServerIsOnDemand:
+    !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
+  WindowsAgentIsOnDemand:
+    !Equals [!Ref WindowsAgentInstanceMarketTypeParameter, "on-demand"]
+  LinuxAgent1IsOnDemand:
+    !Equals [!Ref LinuxAgent1InstanceMarketTypeParameter, "on-demand"]
+  LinuxAgent2IsOnDemand:
+    !Equals [!Ref LinuxAgent2InstanceMarketTypeParameter, "on-demand"]
 
 Resources:
   LabVPC:
@@ -240,12 +276,27 @@ Resources:
           
 # Wazuh Server AIO
 
+  WazuhServerLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WazuhServerInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWazuhServer
+          InstanceMarketOptions:
+            !If 
+                - WazuhServerIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WazuhServerInstanceMarketTypeParameter
+
   WazuhServerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: !Ref WazuhServerInstanceType
-      ImageId: !Ref AmiAliasWazuhServer
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WazuhServerLaunchTemplate
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
@@ -524,12 +575,27 @@ Resources:
 
 # Linux Wazuh Agent 1 Ubuntu
 
+  LinuxAgent1LaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: LinuxAgent1InstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasLinuxAgent1
+          InstanceMarketOptions:
+            !If 
+                - LinuxAgent1IsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: LinuxAgent1InstanceMarketTypeParameter
+
   LinuxAgent1:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: t2.small
-      ImageId: !Ref AmiAliasLinuxAgent1
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref LinuxAgent1LaunchTemplate      
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Linux Ubuntu Agent from " , !Ref AmiAliasLinuxAgent1] ] 
@@ -569,15 +635,30 @@ Resources:
 
 # Linux Wazuh Agent 2 RedHat
 
+  LinuxAgent2LaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: LinuxAgent2InstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !FindInMap
+            - RegionMap
+            - !Ref 'AWS::Region'
+            - HVMREDHAT9
+          InstanceMarketOptions:
+            !If 
+                - LinuxAgent2IsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: LinuxAgent2InstanceMarketTypeParameter
+
   LinuxAgent2:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: t2.small
-      ImageId: !FindInMap
-        - RegionMap
-        - !Ref 'AWS::Region'
-        - HVMREDHAT9
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref LinuxAgent2LaunchTemplate   
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Linux RHEL Agent from " , !FindInMap [RegionMap, !Ref "AWS::Region", HVMREDHAT9]] ]
@@ -623,12 +704,27 @@ Resources:
 
 # Windows Wazuh Agent
 
+  WindowsAgentLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WindowsAgentInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWindowsAgent1
+          InstanceMarketOptions:
+            !If 
+                - WindowsAgentIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WindowsAgentInstanceMarketTypeParameter
+
   WindowsAgent1:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: !Ref WindowsAgentInstanceType
-      ImageId: !Ref AmiAliasWindowsAgent1
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WindowsAgentLaunchTemplate  
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh Windows Agent from " , !Ref AmiAliasWindowsAgent1] ] 

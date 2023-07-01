@@ -1,5 +1,5 @@
 # CloudFormation template for latest Wazuh AIO AMI with a CentOS7 and a Windows Server 2022 Wazuh Agents
-# version 2023-06-08 
+#version 2023-07-01
 # Author: Carlos Dams
 Parameters:
   WorkstationIp:
@@ -105,6 +105,13 @@ Parameters:
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
     ConstraintDescription: must be a valid EC2 instance type.
+  WazuhServerInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Wazuh Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
   WindowsAgentInstanceType:
     Description: EC2 Instance type of Windows Server 2022 #m4.xlarge vendor recommended (very expensive), t2.medium to save money
     Type: String
@@ -114,6 +121,20 @@ Parameters:
     - t2.medium #minimum 2vCPU and 4GB RAM, cheapest option 
     - t2.large #2vCPU and 8GB RAM 
     ConstraintDescription: must be a valid EC2 instance type.
+  WindowsAgentInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Windows Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  LinuxAgent1InstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Linux Agent 1 CentOS7.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
 
   OpenWazuhAPIToWorkStationIp:
     Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
@@ -137,6 +158,12 @@ Conditions:
   OpenOpenSearchAPI: !Equals 
     - !Ref OpenOpenSearchAPIToWorkStationIp
     - 'Yes'
+  WazuhServerIsOnDemand:
+    !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
+  WindowsAgentIsOnDemand:
+    !Equals [!Ref WindowsAgentInstanceMarketTypeParameter, "on-demand"]
+  LinuxAgent1IsOnDemand:
+    !Equals [!Ref LinuxAgent1InstanceMarketTypeParameter, "on-demand"]
 
 Resources:
   LabVPC:
@@ -190,12 +217,27 @@ Resources:
 
 # Wazuh Server AIO
 
+  WazuhServerLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WazuhServerInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWazuhServer
+          InstanceMarketOptions:
+            !If 
+                - WazuhServerIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WazuhServerInstanceMarketTypeParameter
+
   WazuhServerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: !Ref WazuhServerInstanceType
-      ImageId: !Ref AmiAliasWazuhServer
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WazuhServerLaunchTemplate
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
@@ -473,14 +515,29 @@ Resources:
       SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
 
 
-# Linux Wazuh Agent
+# Linux Wazuh Agent 1
+
+  LinuxAgent1LaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: LinuxAgent1InstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasLinuxAgent1
+          InstanceMarketOptions:
+            !If 
+                - LinuxAgent1IsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: LinuxAgent1InstanceMarketTypeParameter
 
   LinuxAgent1:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: t2.micro
-      ImageId: !Ref AmiAliasLinuxAgent1
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref LinuxAgent1LaunchTemplate    
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh Linux Agent from " , !Ref AmiAliasLinuxAgent1] ] 
@@ -526,12 +583,27 @@ Resources:
 
 # Windows Wazuh Agent
 
+  WindowsAgentLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WindowsAgentInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWindowsAgent1
+          InstanceMarketOptions:
+            !If 
+                - WindowsAgentIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WindowsAgentInstanceMarketTypeParameter
+
   WindowsAgent1:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: !Ref WindowsAgentInstanceType
-      ImageId: !Ref AmiAliasWindowsAgent1
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WindowsAgentLaunchTemplate  
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh Windows Agent from " , !Ref AmiAliasWindowsAgent1] ] 
