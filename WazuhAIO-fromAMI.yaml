@@ -1,7 +1,7 @@
 # CloudFormation template for latest Wazuh AIO AMI with no Agents. 
 #Wazuh AMI info: https://documentation.wazuh.com/current/deployment-options/amazon-machine-images/amazon-machine-images.html
 #This builds the VPC 172.20.0.0/16 and subnet 172.20.0.0/24 assigning IP address 172.20.0.10 to Wazuh Server
-#version 06/08/2023
+#version 2023-07-01
 # Author: Carlos Dams
 Parameters:
   WorkstationIp:
@@ -83,6 +83,13 @@ Parameters:
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
     ConstraintDescription: must be a valid EC2 instance type.
+  WazuhServerInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
   OpenWazuhAPIToWorkStationIp:
     Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
     Default: 'No'
@@ -105,6 +112,8 @@ Conditions:
   OpenOpenSearchAPI: !Equals 
     - !Ref OpenOpenSearchAPIToWorkStationIp
     - 'Yes'
+  WazuhServerIsOnDemand:
+    !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
 
 Resources:
   LabVPC:
@@ -161,12 +170,27 @@ Resources:
 
  # Wazuh Server AIO
 
+  WazuhServerLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WazuhServerInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWazuhServer
+          InstanceMarketOptions:
+            !If 
+                - WazuhServerIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WazuhServerInstanceMarketTypeParameter
+
   WazuhServerInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
       KeyName: !Ref KeyNameToUse
       InstanceType: !Ref WazuhServerInstanceType
-      ImageId: !Ref AmiAliasWazuhServer
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WazuhServerLaunchTemplate
       Tags:
         - Key: "Name"
           Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
