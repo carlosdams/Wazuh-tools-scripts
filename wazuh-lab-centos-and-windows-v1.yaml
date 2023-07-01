@@ -1,5 +1,6 @@
 # CloudFormation template for latest Wazuh AIO AMI with a CentOS7 and a Windows Server 2022 Wazuh Agents
 # version 2023-06-08 
+# Author: Carlos Dams
 Parameters:
   WorkstationIp:
     Type: String

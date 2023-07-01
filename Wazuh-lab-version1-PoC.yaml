@@ -2,6 +2,7 @@
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
 # However, PoC Guide states a Windows 11 machine but it is simpler to get a Windows Server in AWS
 # version 2023-06-08
+# Author: Carlos Dams
 Mappings: 
   RegionMap:
     us-east-1:

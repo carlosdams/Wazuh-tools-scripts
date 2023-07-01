@@ -1,7 +1,8 @@
 # CloudFormation template for latest Wazuh AIO AMI with no Agents. 
 #Wazuh AMI info: https://documentation.wazuh.com/current/deployment-options/amazon-machine-images/amazon-machine-images.html
-#version 06/08/2023
 #This builds the VPC 172.20.0.0/16 and subnet 172.20.0.0/24 assigning IP address 172.20.0.10 to Wazuh Server
+#version 06/08/2023
+# Author: Carlos Dams
 Parameters:
   WorkstationIp:
     Type: String
