@@ -1,10 +1,5 @@
-# CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
-# Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
-# However, PoC Guide states a Windows 11 machine but it is simpler to get a Windows Server in AWS
-# Difference with Wazuh-lab-version1-PoC is that the Wazuh Manager has its own Security Group, it is not the same as the one for Linux Wazuh Agents. 
-# Also, this option allows to choose the networks where new Wazuh Agents can enroll-communicate and the network the Wazuh Web UI can be accessed from.
-# Making this lab a more isolated option
-# version 2023-06-08
+# CloudFormation template for latest Wazuh AIO AMI with Wazuh Agent: Red Hat Enterprise Linux 9.0, there is a SG for Windows computers in case of adding any later
+# version 2023-06-30
 # Author: Carlos Dams
 Mappings: 
   RegionMap:
@@ -57,18 +52,10 @@ Parameters:
     Description: AMI alias of Wazuh
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/marketplace/prod-khkzdapwa4w62/latest' #An specific version can be selected sometimes by changing "latest" for the version, ex: "v4.3.8"
-  AmiAliasLinuxAgent1:
-    Description: AMI alias of Ubuntu 22.04 Agent
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/marketplace/prod-lfutkwiaknxsk/latest' 
 #  AmiAliasLinuxAgent2:
 #    Description: AMI alias of Red Hat Enterprise Linux 9.0 Agent # I have not found the AMI alias
 #    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
 #    Default: '' 
-  AmiAliasWindowsAgent1:
-    Description: AMI alias of Windows Agent Server 2022 base
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/marketplace/prod-tj2wcsymhcvj2/latest' 
   CidrBlockVPC: 
     Description: CIDR block of the VPC
     Type: 'String'
@@ -93,26 +80,10 @@ Parameters:
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
     ConstraintDescription: must be a valid IP address of the form x.x.x.x
-  PrivateAddressLinuxAgent1:
-    Description: Private IP Address of Linux Agent-1
-    Type: 'String'
-    Default: '172.20.0.20'
-    MinLength: 7
-    MaxLength: 15
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
-    ConstraintDescription: must be a valid IP address of the form x.x.x.x
   PrivateAddressLinuxAgent2:
     Description: Private IP Address of Linux Agent-2
     Type: 'String'
     Default: '172.20.0.30'
-    MinLength: 7
-    MaxLength: 15
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
-    ConstraintDescription: must be a valid IP address of the form x.x.x.x
-  PrivateAddressWindowsAgent1:
-    Description: Private IP Address of Windows Agent-1
-    Type: 'String'
-    Default: '172.20.0.40'
     MinLength: 7
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
@@ -151,15 +122,6 @@ Parameters:
     - t2.medium #bare minimum 2vCPU and 4GB RAM, cheapest option 
     - t2.large #2vCPU and 8GB RAM 
     - t2.xlarge #4vCPU and 16GB RAM
-    ConstraintDescription: must be a valid EC2 instance type.
-  WindowsAgentInstanceType:
-    Description: EC2 Instance type of Windows Server 2022 #m4.xlarge vendor recommended (very expensive), t2.medium to save money
-    Type: String
-    Default: t2.medium
-    AllowedValues:
-    - m4.xlarge #vendor recommended 4vCPU and 16GB RAM
-    - t2.medium #minimum 2vCPU and 4GB RAM, cheapest option 
-    - t2.large #2vCPU and 8GB RAM 
     ConstraintDescription: must be a valid EC2 instance type.
 
   OpenWazuhAPIToWorkStationIp:
@@ -522,51 +484,6 @@ Resources:
       ToPort: 443
       SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
 
-# Linux Wazuh Agent 1 Ubuntu
-
-  LinuxAgent1:
-    Type: 'AWS::EC2::Instance'
-    Properties:
-      KeyName: !Ref KeyNameToUse
-      InstanceType: t2.small
-      ImageId: !Ref AmiAliasLinuxAgent1
-      Tags:
-        - Key: "Name"
-          Value: !Join [ '', [ "Linux Ubuntu Agent from " , !Ref AmiAliasLinuxAgent1] ] 
-      NetworkInterfaces:
-        - DeleteOnTermination: 'true'
-          DeviceIndex: '0'
-          SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PrivateAddressLinuxAgent1
-          GroupSet:
-            - Ref: WazuhLinuxAgentSecurityGroup
-      UserData: !Base64 
-        'Fn::Sub': |
-          #!/bin/bash -xe
-          hostnamectl set-hostname --static linux1-ubuntu
-          echo "preserve_hostname: true" >> /etc/cloud/cloud.cfg
-          echo "PATH=$PATH:$HOME/bin:/var/ossec/bin" >> /root/.bashrc
-          curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
-          echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
-          apt update
-          
-          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' apt install -y wazuh-agent
-          sleep 75
-          systemctl daemon-reload
-          systemctl enable wazuh-agent
-          systemctl start wazuh-agent
-          
-          sed -i "s/^deb/#deb/" /etc/apt/sources.list.d/wazuh.list
-          apt-get update
-    DependsOn: WazuhServerInstance
-
-  LinuxAgent1EIP:
-    Type: AWS::EC2::EIP
-    Properties: 
-      Domain: vpc
-      InstanceId: !Ref LinuxAgent1
-    DependsOn: WazuhServerInstance
-
 # Linux Wazuh Agent 2 RedHat
 
   LinuxAgent2:
@@ -621,41 +538,6 @@ Resources:
       InstanceId: !Ref LinuxAgent2
     DependsOn: WazuhServerInstance
 
-# Windows Wazuh Agent
-
-  WindowsAgent1:
-    Type: 'AWS::EC2::Instance'
-    Properties:
-      KeyName: !Ref KeyNameToUse
-      InstanceType: !Ref WindowsAgentInstanceType
-      ImageId: !Ref AmiAliasWindowsAgent1
-      Tags:
-        - Key: "Name"
-          Value: !Join [ '', [ "Wazuh Windows Agent from " , !Ref AmiAliasWindowsAgent1] ] 
-      NetworkInterfaces:
-        - DeleteOnTermination: 'true'
-          DeviceIndex: '0'
-          SubnetId: !Ref Subnet
-          PrivateIpAddress: !Ref PrivateAddressWindowsAgent1
-          GroupSet:
-            - Ref: WazuhWindowsSecurityGroup
-      UserData: !Base64 
-        'Fn::Sub': |
-          <powershell>
-          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.4-1.msi -OutFile $env:tmp\wazuh-agent-4.4.4.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.4.msi /q WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' WAZUH_REGISTRATION_SERVER='${PrivateAddressWazuhServer}' 
-          #at least 10 seconds are necessary for the service to be available to start
-          Start-Sleep -Seconds 100  
-          NET START WazuhSvc
-          </powershell>
-    DependsOn: WazuhServerInstance
-
-  WindowsAgent1EIP:
-    Type: AWS::EC2::EIP
-    Properties: 
-      Domain: vpc
-      InstanceId: !Ref WindowsAgent1
-    DependsOn: WazuhServerInstance
-
 Outputs:
   VpcId:
     Description: The VPC ID
@@ -670,21 +552,11 @@ Outputs:
     Value: !Join [ '', ["https://", !GetAtt WazuhServerInstance.PublicDnsName]]
     Export:
       Name: !Sub "${AWS::StackName}-WazuhServer-DomainName"
-  LinuxAgentUbuntuPublicIP:
-    Description: The Public IP address of Linux Agent Ubuntu 22.04
-    Value: !GetAtt LinuxAgent1EIP.PublicIp
-    Export:
-      Name: !Sub "${AWS::StackName}-LinuxAgentUbuntu-PublicIp"
   LinuxAgentRHELPublicIP:
     Description: The Public IP address of Linux Agent RHEL 9
     Value: !GetAtt LinuxAgent2EIP.PublicIp
     Export:
       Name: !Sub "${AWS::StackName}-LinuxAgentRHEL-PublicIp"
-  WindowsAgentPublicIP:
-    Description: The Public IP address of the Windows Agent
-    Value: !GetAtt WindowsAgent1EIP.PublicIp
-    Export:
-      Name: !Sub "${AWS::StackName}-WindowsAgent-PublicIp"
   WazuhServerID:
     Description: Password of Wazuh Web UI
     Value: !Ref WazuhServerInstance
