@@ -175,6 +175,14 @@ Parameters:
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
     ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockpfSenseGUIAccess: 
+    Description: CIDR block of the network that can access the Web GUI Configurator of pfSense
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
   WazuhServerInstanceType:
     Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
     Type: String
@@ -486,19 +494,19 @@ Resources:
         - IpProtocol: udp
           FromPort: '1194'
           ToPort: '1194'
-          CidrIp: !Sub ${CidrBlockWazuhAgentsEnrollment}
+          CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: udp
           FromPort: '500'
           ToPort: '500'
-          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
+          CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: udp
           FromPort: '4500'
           ToPort: '4500'
-          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
+          CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: tcp
           FromPort: '443'
           ToPort: '443' #to access Wazuh Web UI
-          CidrIp: !Sub ${CidrBlockWazuhWebUIAccess}
+          CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
 
   pfSenseLaunchTemplate:
       Type: AWS::EC2::LaunchTemplate
@@ -569,6 +577,20 @@ Resources:
            Ref: pfSenseInstanceNetworkInterface1
         DeviceIndex: 1
 
+  pfSenseSecurityGroupAllowAllInboundFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 1024
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
 # To be able to use the same Security Groups (as a source) created on the previos part
 
   WazuhManagerSecurityGroupSelfReferencePing:
@@ -613,6 +635,18 @@ Resources:
       ToPort: -1
       SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
 
+  WazuhWindowsSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
+
   WazuhManagerSecurityGroupPingFromWazuhLinuxAgentSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
     DependsOn: 
@@ -636,6 +670,18 @@ Resources:
       FromPort: 22
       ToPort: 22
       SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
 
   WazuhLinuxAgentSecurityGroupPingFromWazuhManagerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
@@ -672,6 +718,18 @@ Resources:
       FromPort: 22
       ToPort: 22
       SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhLinuxAgentSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
 
   WazuhLinuxAgentSecurityGroupSelfReferenceSSHFromLinuxAgentSecurityGroup:
     Type: 'AWS::EC2::SecurityGroupIngress'
