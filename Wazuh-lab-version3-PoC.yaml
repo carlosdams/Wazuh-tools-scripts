@@ -2,7 +2,7 @@
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
 # Difference with Wazuh-lab-version2-PoC is that it has a firewall (considering pfSense, OPNsense and IPFire)
 
-#version 2023-09-17
+#version 2023-09-19
 # Author: Carlos Dams
 Mappings: 
   RegionMap:
@@ -202,13 +202,13 @@ Parameters:
     - spot
     - on-demand
   pfSenseInstanceType:
-    Description: EC2 Instance type of pfSense #m5.large vendor recommended ($0.336/h in N. Viriginia), t3.small to save money
+    Description: EC2 Instance type of pfSense #m5.large vendor recommended ($0.336/h in N. Viriginia), t3.small or t3.micro good options to save money
     Type: String
-    Default: t3.small
+    Default: t3.micro
     AllowedValues:
     - m5.large #vendor recommended 2vCPU and 8GB RAM
     - t2.medium #2vCPU and 4GB RAM 
-    - t3.micro #minimum 1vCPU and 1GB RAM, cheapest option 
+    - t3.micro #2vCPU and 1GB RAM, cheapest option 
     - t3.small #2vCPU and 2GB RAM 
     ConstraintDescription: must be a valid EC2 instance type.
   pfSenseInstanceMarketTypeParameter:
@@ -335,6 +335,22 @@ Resources:
     Properties:
       RouteTableId: !Ref RouteTablePublicSubnet
       SubnetId: !Ref PublicSubnet
+  RouteTablePrivateSubnet:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+  RoutePrivateSubnet:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateSubnet
+      DestinationCidrBlock: "0.0.0.0/0"
+      NetworkInterfaceId: !Ref pfSenseInstanceNetworkInterface1
+  SubnetRouteTableAssociationPrivateSubnet:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateSubnet
+      SubnetId: !Ref PrivateSubnet
   KeyNameToUse:
     Description: New EC2 Key pair that will be saved on Parameter Store
     Type: AWS::EC2::KeyPair
@@ -566,6 +582,7 @@ Resources:
     Type: 'AWS::EC2::NetworkInterface'
     Properties:
       SubnetId: !Ref PrivateSubnet
+      PrivateIpAddress: !Ref PrivateAddresspfSense
       GroupSet:
       - !Ref pfSenseSecurityGroup
   pfSenseNetworkInterfaceAttachment:
