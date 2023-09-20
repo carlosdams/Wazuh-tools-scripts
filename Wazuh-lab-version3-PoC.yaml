@@ -183,6 +183,13 @@ Parameters:
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
     ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CustomPortpfSenseGUIAccess:
+    Type: Number
+    Description: The custom port for HTTPS WebConfigurator to use instead of 443.
+    Default: '7443'
+    MinValue: 0
+    MaxValue: 65535
+    ConstraintDescription: must be a valid port number from 0 to 65535
   WazuhServerInstanceType:
     Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
     Type: String
@@ -525,7 +532,11 @@ Resources:
           CidrIp: !Sub ${WorkstationIp}
         - IpProtocol: tcp
           FromPort: '443'
-          ToPort: '443' #to access Wazuh Web UI
+          ToPort: '443' #to access pfSense WebConfigurator
+          CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
+        - IpProtocol: tcp #to access pfSense WebConfigurator in custom port
+          FromPort: !Sub ${CustomPortpfSenseGUIAccess}
+          ToPort: !Sub ${CustomPortpfSenseGUIAccess} 
           CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
 
   pfSenseLaunchTemplate:
