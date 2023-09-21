@@ -577,8 +577,7 @@ Resources:
 #          GroupSet:
 #            - Ref: pfSenseSecurityGroup
       UserData: !Base64 
-        'Fn::Sub': |
-          password=${PasswordWebGUIpfSense}
+        'Fn::Sub': password=${PasswordWebGUIpfSense}
 
   pfSenseInstanceEIP:
     Type: AWS::EC2::EIP
