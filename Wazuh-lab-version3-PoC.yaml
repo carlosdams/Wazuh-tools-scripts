@@ -1,6 +1,6 @@
 # CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
-# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall
+# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall, all VMs will not have a public IP address, the pfSense firewall will act as a NAT instance
 
 #version 2023-09-21
 # Author: Carlos Dams
@@ -424,12 +424,6 @@ Resources:
           sleep 50
           systemctl restart wazuh-manager
 
-#  WazuhServerEIP:
-#    Type: AWS::EC2::EIP
-#    DependsOn: AttachGateway
-#    Properties: 
-#      Domain: vpc
-#      InstanceId: !Ref WazuhServerInstance
   WazuhManagerSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
@@ -588,12 +582,7 @@ Resources:
           PrivateIpAddress: !Ref PrivateAddressPublicSubnetpfSense
           GroupSet:
             - Ref: pfSenseSecurityGroup
-#        - DeleteOnTermination: 'true'
-#          DeviceIndex: '1'
-#          SubnetId: !Ref PrivateSubnet
-#          PrivateIpAddress: !Ref PrivateAddresspfSense
-#          GroupSet:
-#            - Ref: pfSenseSecurityGroup
+
       UserData: !Base64 
         'Fn::Sub': password=${PasswordWebGUIpfSense}
 
@@ -603,11 +592,6 @@ Resources:
     Properties: 
       Domain: vpc
       InstanceId: !Ref pfSenseInstance # I cannot associate with the instance if it has two NICs,
-#  PublicEIPAssociate:
-#    Type: 'AWS::EC2::EIPAssociation'
-#    Properties:
-#      AllocationId: !GetAtt pfSenseInstanceEIP.AllocationId
-#      NetworkInterfaceId: !Ref InterfacePublic
 
   pfSenseInstanceNetworkInterface1:
     DependsOn: pfSenseInstanceEIP
@@ -902,13 +886,6 @@ Resources:
           apt-get update
     DependsOn: WazuhServerInstance
 
-#  LinuxAgent1EIP:
-#    Type: AWS::EC2::EIP
-#    Properties: 
-#      Domain: vpc
-#      InstanceId: !Ref LinuxAgent1
-#    DependsOn: WazuhServerInstance
-
 # Linux Wazuh Agent 2 RedHat
 
   LinuxAgent2LaunchTemplate:
@@ -971,13 +948,6 @@ Resources:
           sed -i "s/^enabled=1/enabled=0/" /etc/yum.repos.d/wazuh.repo
     DependsOn: WazuhServerInstance
 
-#  LinuxAgent2EIP:
-#    Type: AWS::EC2::EIP
-#    Properties: 
-#      Domain: vpc
-#      InstanceId: !Ref LinuxAgent2
-#    DependsOn: WazuhServerInstance
-
 # Windows Wazuh Agent
 
   WindowsAgentLaunchTemplate:
@@ -1021,47 +991,16 @@ Resources:
           </powershell>
     DependsOn: WazuhServerInstance
 
-#  WindowsAgent1EIP:
-#    Type: AWS::EC2::EIP
-#    Properties: 
-#      Domain: vpc
-#      InstanceId: !Ref WindowsAgent1
-#    DependsOn: WazuhServerInstance
 
 Outputs:
   VpcId:
     Description: The VPC ID
     Value: !Ref LabVPC
-#  WazuhServerPublicIP:
-#    Description: The Public IP address of Wazuh Server
-#    Value: !GetAtt WazuhServerEIP.PublicIp
-#    Export:
-#      Name: !Sub "${AWS::StackName}-WazuhServer-PublicIp"
-#  WazuhServerDNS:
-#    Description: The link of Wazuh Server
-#    Value: !Join [ '', ["https://", !GetAtt WazuhServerInstance.PublicDnsName]]
-#    Export:
-#      Name: !Sub "${AWS::StackName}-WazuhServer-DomainName"
   pfSenseInstancePublicIP:
     Description: The Public IP address of pfSense
     Value: !GetAtt pfSenseInstanceEIP.PublicIp
     Export:
       Name: !Sub "${AWS::StackName}-pfSense-PublicIp"
-#  LinuxAgentUbuntuPublicIP:
-#    Description: The Public IP address of Linux Agent Ubuntu 22.04
-#    Value: !GetAtt LinuxAgent1EIP.PublicIp
-#    Export:
-#      Name: !Sub "${AWS::StackName}-LinuxAgentUbuntu-PublicIp"
-#  LinuxAgentRHELPublicIP:
-#    Description: The Public IP address of Linux Agent RHEL 9
-#    Value: !GetAtt LinuxAgent2EIP.PublicIp
-#    Export:
-#      Name: !Sub "${AWS::StackName}-LinuxAgentRHEL-PublicIp"
-#  WindowsAgentPublicIP:
-#    Description: The Public IP address of the Windows Agent
-#    Value: !GetAtt WindowsAgent1EIP.PublicIp
-#    Export:
-#      Name: !Sub "${AWS::StackName}-WindowsAgent-PublicIp"
   WazuhServerID:
     Description: Password of Wazuh Web UI
     Value: !Ref WazuhServerInstance
