@@ -1,8 +1,8 @@
 # CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
-# Difference with Wazuh-lab-version2-PoC is that this one has a firewall (considering pfSense, OPNsense and IPFire)
+# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall
 
-#version 2023-09-19
+#version 2023-09-21
 # Author: Carlos Dams
 Mappings: 
   RegionMap:
@@ -186,7 +186,7 @@ Parameters:
   CustomPortpfSenseGUIAccess:
     Type: Number
     Description: The custom port for HTTPS WebConfigurator to use instead of 443.
-    Default: '7443'
+    Default: 7443
     MinValue: 0
     MaxValue: 65535
     ConstraintDescription: must be a valid port number from 0 to 65535
@@ -271,12 +271,23 @@ Parameters:
       - 'Yes'
       - 'No'
 
+  OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess:
+    Description: If Yes is selected the CustomPortpfSenseGUIAccess will be added to SG of pfSense and will be reachable by CidrBlockpfSenseGUIAccess.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
 Conditions:
   OpenWazuhAPI: !Equals 
     - !Ref OpenWazuhAPIToWorkStationIp
     - 'Yes'
   OpenOpenSearchAPI: !Equals 
     - !Ref OpenOpenSearchAPIToWorkStationIp
+    - 'Yes'
+  OpeninboundPortForWebConfiguratorpfSenseSecurityGroup: !Equals
+    - !Ref OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess
     - 'Yes'
   WazuhServerIsOnDemand:
     !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
@@ -534,10 +545,17 @@ Resources:
           FromPort: '443'
           ToPort: '443' #to access pfSense WebConfigurator
           CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
-        - IpProtocol: tcp #to access pfSense WebConfigurator in custom port
-          FromPort: !Sub ${CustomPortpfSenseGUIAccess}
-          ToPort: !Sub ${CustomPortpfSenseGUIAccess} 
-          CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
+
+  inboundPortForWebConfiguratorpfSenseSecurityGroup: #The purpose is to create the inbound SG rule for a different port than 443 to be used for WebConfigurator
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpeninboundPortForWebConfiguratorpfSenseSecurityGroup
+    DependsOn: pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: tcp
+      FromPort: !Sub ${CustomPortpfSenseGUIAccess}
+      ToPort: !Sub ${CustomPortpfSenseGUIAccess} 
+      CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
 
   pfSenseLaunchTemplate:
       Type: AWS::EC2::LaunchTemplate
