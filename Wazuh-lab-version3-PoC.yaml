@@ -1,0 +1,1006 @@
+# CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
+# Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
+# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall, all VMs will not have a public IP address, the pfSense firewall will act as a NAT instance
+
+#version 2023-09-21
+# Author: Carlos Dams
+Mappings: 
+  RegionMap:
+    us-east-1:
+      HVMREDHAT9: ami-05723c3b9cf4bf4ff
+    us-east-2:
+      HVMREDHAT9: ami-08d616b7fbe4bb9d0
+    us-west-1:
+      HVMREDHAT9: ami-029465c1f346dd34f
+    us-west-2:
+      HVMREDHAT9: ami-0b6ce9bcd0a2f720d
+    ca-central-1:
+      HVMREDHAT9: ami-093dddc44bec52167
+    eu-west-1:
+      HVMREDHAT9: ami-0f11fb3119dc9fc60
+    eu-west-2:
+      HVMREDHAT9: ami-023cd3f0d10fb8a9c
+    eu-west-3:
+      HVMREDHAT9: ami-0c226b3aa389adbef
+    ap-northeast-1:
+      HVMREDHAT9: ami-083594d506bfbc152
+    ap-northeast-2:
+      HVMREDHAT9: ami-07cc74f198bb9e86a
+    ap-southeast-1:
+      HVMREDHAT9: ami-0b2aec26bb1a5169d
+    ap-southeast-2:
+      HVMREDHAT9: ami-003cf7280eac7a28a
+    ap-south-1:
+      HVMREDHAT9: ami-069d9fecd19e7ed40
+    sa-east-1:
+      HVMREDHAT9: ami-07509c78b1456cc84
+Parameters:
+  WorkstationIp:
+    Type: String
+    Description: The IP address of the workstation that can RDP and SSH into the instances. Keep 0.0.0.0/0 to allow any IP address.
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
+  PasswordWazuhServerAgentEnrollment:
+    Type: String
+    Description: Password required during the enrollment process of Wazuh Agents https://documentation.wazuh.com/current/user-manual/agent-enrollment/security-options/using-password-authentication.html
+    Default: 'please123'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: "(\\w{8,64})"
+    ConstraintDescription: 'Must have at least 8 characters and a maximum of 64 characters. A word character: [a-zA-Z_0-9]'
+  PasswordWebGUIpfSense:
+    Type: String
+    Description: Password to access pfSense Web GUI, recommended to change after logging in the first time https://docs.netgate.com/pfsense/en/latest/solutions/aws-vpn-appliance/faq.html#how-can-the-random-password-selected-during-provisioning-be-changed 
+    Default: 'carlosdams'
+    MinLength: 8
+    MaxLength: 64
+    AllowedPattern: "(\\w{8,64})"
+    ConstraintDescription: 'Must have at least 8 characters and a maximum of 64 characters. A word character: [a-zA-Z_0-9]'
+  AmiAliasWazuhServer:
+    Description: AMI alias of Wazuh
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-khkzdapwa4w62/latest' #An specific version can be selected sometimes by changing "latest" for the version, ex: "v4.3.8"
+  AmiAliasLinuxAgent1:
+    Description: AMI alias of Ubuntu 22.04 Agent
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-lfutkwiaknxsk/latest' 
+#  AmiAliasLinuxAgent2:
+#    Description: AMI alias of Red Hat Enterprise Linux 9.0 Agent # I have not found the AMI alias
+#    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+#    Default: '' 
+  AmiAliasWindowsAgent1:
+    Description: AMI alias of Windows Agent Server 2022 base
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-tj2wcsymhcvj2/latest' 
+  AmiAliaspfSense: 
+    Description: AMI alias of pfSense
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/marketplace/prod-l67d4nmfan3ci/latest'
+  CidrBlockVPC: 
+    Description: CIDR block of the VPC
+    Type: 'String'
+    Default: '172.20.0.0/16'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
+  CidrBlockPublicSubnet: 
+    Description: CIDR block of the Public Subnet
+    Type: 'String'
+    Default: '172.20.1.0/24'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
+  CidrBlockPrivateSubnet: 
+    Description: CIDR block of the Private Subnet
+    Type: 'String'
+    Default: '172.20.0.0/24'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
+  PrivateAddressWazuhServer:
+    Description: Private IP Address of Wazuh Server
+    Type: 'String'
+    Default: '172.20.0.10'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddresspfSense:
+    Description: Private IP Address of pfSense in Private Subnet
+    Type: 'String'
+    Default: '172.20.0.5'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressPublicSubnetpfSense:
+    Description: Private IP Address of pfSense in Public Subnet
+    Type: 'String'
+    Default: '172.20.1.5'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent1:
+    Description: Private IP Address of Linux Agent-1
+    Type: 'String'
+    Default: '172.20.0.20'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressLinuxAgent2:
+    Description: Private IP Address of Linux Agent-2
+    Type: 'String'
+    Default: '172.20.0.30'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  PrivateAddressWindowsAgent1:
+    Description: Private IP Address of Windows Agent-1
+    Type: 'String'
+    Default: '172.20.0.40'
+    MinLength: 7
+    MaxLength: 15
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
+    ConstraintDescription: must be a valid IP address of the form x.x.x.x
+  CidrBlockWazuhAgentsEnrollment: 
+    Description: CIDR block of the network that new Wazuh Agents can enroll (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsCommunication
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhAgentsCommunication: 
+    Description: CIDR block of the network that new Wazuh Agents can communicate (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsEnrollment
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockWazuhWebUIAccess: 
+    Description: CIDR block of the network that can access the Wazuh Web UI
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CidrBlockpfSenseGUIAccess: 
+    Description: CIDR block of the network that can access the Web GUI Configurator of pfSense
+    Type: 'String'
+    Default: '0.0.0.0/0'
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
+  CustomPortpfSenseGUIAccess:
+    Type: Number
+    Description: The custom port for HTTPS WebConfigurator to use instead of 443.
+    Default: 7443
+    MinValue: 0
+    MaxValue: 65535
+    ConstraintDescription: must be a valid port number from 0 to 65535
+  WazuhServerInstanceType:
+    Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
+    Type: String
+    Default: c5a.large
+    AllowedValues:
+    - c5a.large #bare minimum 2vCPU and 4GB RAM
+    - c5a.xlarge #recommended 4vCPU and 8GB RAM
+    - t2.medium #bare minimum 2vCPU and 4GB RAM, cheapest option 
+    - t2.large #2vCPU and 8GB RAM 
+    - t2.xlarge #4vCPU and 16GB RAM
+    ConstraintDescription: must be a valid EC2 instance type.
+  WazuhServerInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Wazuh Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  pfSenseInstanceType:
+    Description: EC2 Instance type of pfSense #m5.large vendor recommended ($0.336/h in N. Viriginia), t3.small or t3.micro good options to save money
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+    - m5.large #vendor recommended 2vCPU and 8GB RAM
+    - t2.medium #2vCPU and 4GB RAM 
+    - t3.micro #2vCPU and 1GB RAM, cheapest option 
+    - t3.small #2vCPU and 2GB RAM 
+    ConstraintDescription: must be a valid EC2 instance type.
+  pfSenseInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for pfSense.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  WindowsAgentInstanceType:
+    Description: EC2 Instance type of Windows Server 2022 #m4.xlarge vendor recommended (very expensive), t2.medium to save money
+    Type: String
+    Default: t2.medium
+    AllowedValues:
+    - m4.xlarge #vendor recommended 4vCPU and 16GB RAM
+    - t2.medium #minimum 2vCPU and 4GB RAM, cheapest option 
+    - t2.large #2vCPU and 8GB RAM 
+    ConstraintDescription: must be a valid EC2 instance type.
+  WindowsAgentInstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Windows Server.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  LinuxAgent1InstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Linux Agent 1 Ubuntu.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+  LinuxAgent2InstanceMarketTypeParameter:
+   Description: Choose between on-demand and spot instances for Linux Agent 2 RHEL9.
+   Type: String
+   Default: spot
+   AllowedValues:
+    - spot
+    - on-demand
+
+  OpenWazuhAPIToWorkStationIp:
+    Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+  OpenOpenSearchAPIToWorkStationIp:
+    Description: If Yes is selected the OpenSearch API (port 9200) will be reachable from the WorkstationIp specified. It might be neccessary to edit file /etc/wazuh-indexer/opensearch.yml to expose the API
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
+  OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess:
+    Description: If Yes is selected the CustomPortpfSenseGUIAccess will be added to SG of pfSense and will be reachable by CidrBlockpfSenseGUIAccess.
+    Default: 'No'
+    Type: String
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+
+Conditions:
+  OpenWazuhAPI: !Equals 
+    - !Ref OpenWazuhAPIToWorkStationIp
+    - 'Yes'
+  OpenOpenSearchAPI: !Equals 
+    - !Ref OpenOpenSearchAPIToWorkStationIp
+    - 'Yes'
+  OpeninboundPortForWebConfiguratorpfSenseSecurityGroup: !Equals
+    - !Ref OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess
+    - 'Yes'
+  WazuhServerIsOnDemand:
+    !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
+  LinuxAgent2IsOnDemand:
+    !Equals [!Ref LinuxAgent2InstanceMarketTypeParameter, "on-demand"]
+  WindowsAgentIsOnDemand:
+    !Equals [!Ref WindowsAgentInstanceMarketTypeParameter, "on-demand"]
+  LinuxAgent1IsOnDemand:
+    !Equals [!Ref LinuxAgent1InstanceMarketTypeParameter, "on-demand"]
+  pfSenseInstanceIsOnDemand:
+    !Equals [!Ref pfSenseInstanceMarketTypeParameter, "on-demand"]
+
+Resources:
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CidrBlockVPC
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+  PublicSubnet:  
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref CidrBlockPublicSubnet
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+  PrivateSubnet:  
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref CidrBlockPrivateSubnet
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: 'AWS::Region'
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Join [ '-', [ !Ref LabVPC, 'igw']]
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref InternetGateway
+  RouteTablePublicSubnet:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+  RoutePublicSubnet:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTablePublicSubnet
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTableAssociationPublicSubnet:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref RouteTablePublicSubnet
+      SubnetId: !Ref PublicSubnet
+#The part of RouteTablePrivateSubnet until SubnetRouteTableAssociationPrivateSubnet might not be necessary.
+#it seems it does not affect the connection but analyze if it represents any security issue
+#----
+  RouteTablePrivateSubnet:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+  RoutePrivateSubnet:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateSubnet
+      DestinationCidrBlock: "0.0.0.0/0"
+      NetworkInterfaceId: !Ref pfSenseInstanceNetworkInterface1
+  SubnetRouteTableAssociationPrivateSubnet:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref RouteTablePrivateSubnet
+      SubnetId: !Ref PrivateSubnet
+#----
+  KeyNameToUse:
+    Description: New EC2 Key pair that will be saved on Parameter Store
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: wazuhKeyLab
+      Tags: 
+        - Key: "Name"
+          Value: !Join [ '', [ "Key Pair from " , !Sub "${AWS::StackName}"] ] 
+          
+# Wazuh Server AIO
+
+  WazuhServerLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WazuhServerInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWazuhServer
+          InstanceMarketOptions:
+            !If 
+                - WazuhServerIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WazuhServerInstanceMarketTypeParameter
+
+  WazuhServerInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: !Ref WazuhServerInstanceType
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WazuhServerLaunchTemplate
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref PrivateSubnet
+          PrivateIpAddress: !Ref PrivateAddressWazuhServer
+          GroupSet:
+            - Ref: WazuhManagerSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          sed -i 's/<use_password>no/<use_password>yes/' /var/ossec/etc/ossec.conf
+          echo "${PasswordWazuhServerAgentEnrollment}" > /var/ossec/etc/authd.pass
+          #recommended some time to allow it to start well
+          sleep 50
+          systemctl restart wazuh-manager
+
+  WazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '1515'
+          ToPort: '1515'
+          CidrIp: !Sub ${CidrBlockWazuhAgentsEnrollment}
+        - IpProtocol: tcp
+          FromPort: '1514'
+          ToPort: '1514'
+          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443' #to access Wazuh Web UI
+          CidrIp: !Sub ${CidrBlockWazuhWebUIAccess}
+
+  WazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access via port 22
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable RDP access via port 3389 and ICMPv4
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '3389'
+          ToPort: '3389'
+          CidrIp: !Sub ${WorkstationIp} 
+        - IpProtocol: icmp #It might be necessary to enable in Windows firewall of the Windows Server the inbound rule "Virtual Machine Monitoring (Echo Request - ICMPv4-In)"
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+
+  WazuhManagerSecurityGroupWazuhAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenWazuhAPI
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 55000
+      ToPort: 55000
+      CidrIp: !Sub ${WorkstationIp}
+
+  WazuhIndexerSecurityGroupOpenSearchAPI:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpenOpenSearchAPI
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 9200
+      ToPort: 9200
+      CidrIp: !Sub ${WorkstationIp}
+
+#pfSense
+
+  pfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable access to pfSense
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: 50
+          FromPort: 0
+          ToPort: 0
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: udp
+          FromPort: '1194'
+          ToPort: '1194'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: udp
+          FromPort: '500'
+          ToPort: '500'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: udp
+          FromPort: '4500'
+          ToPort: '4500'
+          CidrIp: !Sub ${WorkstationIp}
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443' #to access pfSense WebConfigurator
+          CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
+
+  inboundPortForWebConfiguratorpfSenseSecurityGroup: #The purpose is to create the inbound SG rule for a different port than 443 to be used for WebConfigurator
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Condition: OpeninboundPortForWebConfiguratorpfSenseSecurityGroup
+    DependsOn: pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: tcp
+      FromPort: !Sub ${CustomPortpfSenseGUIAccess}
+      ToPort: !Sub ${CustomPortpfSenseGUIAccess} 
+      CidrIp: !Sub ${CidrBlockpfSenseGUIAccess}
+
+  pfSenseLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: pfSenseInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliaspfSense
+          InstanceMarketOptions:
+            !If 
+                - pfSenseInstanceIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: pfSenseInstanceMarketTypeParameter
+
+  pfSenseInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: !Ref pfSenseInstanceType
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref pfSenseLaunchTemplate
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "pfSense from " , !Ref AmiAliaspfSense] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref PublicSubnet
+          PrivateIpAddress: !Ref PrivateAddressPublicSubnetpfSense
+          GroupSet:
+            - Ref: pfSenseSecurityGroup
+
+      UserData: !Base64 
+        'Fn::Sub': password=${PasswordWebGUIpfSense}
+
+  pfSenseInstanceEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties: 
+      Domain: vpc
+      InstanceId: !Ref pfSenseInstance # I cannot associate with the instance if it has two NICs,
+
+  pfSenseInstanceNetworkInterface1:
+    DependsOn: pfSenseInstanceEIP
+    Type: 'AWS::EC2::NetworkInterface'
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      PrivateIpAddress: !Ref PrivateAddresspfSense
+      SourceDestCheck: false
+      GroupSet:
+      - !Ref pfSenseSecurityGroup
+  pfSenseNetworkInterfaceAttachment:
+     Type: AWS::EC2::NetworkInterfaceAttachment
+     Properties:
+        InstanceId:
+           Ref: pfSenseInstance
+        NetworkInterfaceId:
+           Ref: pfSenseInstanceNetworkInterface1
+        DeviceIndex: 1
+
+  pfSenseSecurityGroupAllowAllInboundFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 1024
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+# To be able to use the same Security Groups (as a source) created on the previos part
+
+  WazuhManagerSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhManagerSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhManagerSecurityGroupSelfReferenceSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhWindowsSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhWindowsSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhWindowsSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
+
+  WazuhManagerSecurityGroupPingFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupSSHFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupPingFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWazuhManagerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSSHFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupAllFrompfSenseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhLinuxAgentSecurityGroup
+    - pfSenseSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferenceSSHFromLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhLinuxAgentSecurityGroupSelfReferencePing:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhLinuxAgentSecurityGroup
+      IpProtocol: icmp
+      FromPort: 8
+      ToPort: -1
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAgentEnrollmentFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1514
+      ToPort: 1515
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+  WazuhManagerSecurityGroupAccessWebUIFromWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    Properties:
+      GroupId: !Ref WazuhManagerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+# Linux Wazuh Agent 1 Ubuntu
+
+  LinuxAgent1LaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: LinuxAgent1InstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasLinuxAgent1
+          InstanceMarketOptions:
+            !If 
+                - LinuxAgent1IsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: LinuxAgent1InstanceMarketTypeParameter
+
+  LinuxAgent1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: t2.small
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref LinuxAgent1LaunchTemplate      
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Linux Ubuntu Agent from " , !Ref AmiAliasLinuxAgent1] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref PrivateSubnet
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent1
+          GroupSet:
+            - Ref: WazuhLinuxAgentSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          hostnamectl set-hostname --static linux1-ubuntu
+          echo "preserve_hostname: true" >> /etc/cloud/cloud.cfg
+          echo "PATH=$PATH:$HOME/bin:/var/ossec/bin" >> /root/.bashrc
+          curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
+          echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
+          apt update
+          
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' apt install -y wazuh-agent
+          sleep 75
+          systemctl daemon-reload
+          systemctl enable wazuh-agent
+          systemctl start wazuh-agent
+          
+          sed -i "s/^deb/#deb/" /etc/apt/sources.list.d/wazuh.list
+          apt-get update
+    DependsOn: WazuhServerInstance
+
+# Linux Wazuh Agent 2 RedHat
+
+  LinuxAgent2LaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: LinuxAgent2InstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !FindInMap
+            - RegionMap
+            - !Ref 'AWS::Region'
+            - HVMREDHAT9
+          InstanceMarketOptions:
+            !If 
+                - LinuxAgent2IsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: LinuxAgent2InstanceMarketTypeParameter
+
+  LinuxAgent2:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: t2.small
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref LinuxAgent2LaunchTemplate   
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Linux RHEL Agent from " , !FindInMap [RegionMap, !Ref "AWS::Region", HVMREDHAT9]] ]
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref PrivateSubnet
+          PrivateIpAddress: !Ref PrivateAddressLinuxAgent2
+          GroupSet:
+            - Ref: WazuhLinuxAgentSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          #!/bin/bash -xe
+          hostnamectl set-hostname --static linux2-rhel
+          echo "preserve_hostname: true" >> /etc/cloud/cloud.cfg
+          echo "PATH=$PATH:$HOME/bin:/var/ossec/bin" >> /root/.bashrc
+          rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
+          cat > /etc/yum.repos.d/wazuh.repo << EOF
+          [wazuh]
+          gpgcheck=1
+          gpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH
+          enabled=1
+          name=EL-\$releasever - Wazuh
+          baseurl=https://packages.wazuh.com/4.x/yum/
+          protect=1
+          EOF
+          
+          WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' yum install -y wazuh-agent
+          sleep 85
+          systemctl daemon-reload
+          systemctl enable wazuh-agent
+          systemctl start wazuh-agent
+          
+          sed -i "s/^enabled=1/enabled=0/" /etc/yum.repos.d/wazuh.repo
+    DependsOn: WazuhServerInstance
+
+# Windows Wazuh Agent
+
+  WindowsAgentLaunchTemplate:
+      Type: AWS::EC2::LaunchTemplate
+      Properties:
+        LaunchTemplateName: WindowsAgentInstanceLaunchTemplate
+        LaunchTemplateData:
+          ImageId: !Ref AmiAliasWindowsAgent1
+          InstanceMarketOptions:
+            !If 
+                - WindowsAgentIsOnDemand
+                - !Ref "AWS::NoValue"
+                - MarketType:
+                    Ref: WindowsAgentInstanceMarketTypeParameter
+
+  WindowsAgent1:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      KeyName: !Ref KeyNameToUse
+      InstanceType: !Ref WindowsAgentInstanceType
+      LaunchTemplate:
+        Version: 1
+        LaunchTemplateId: !Ref WindowsAgentLaunchTemplate  
+      Tags:
+        - Key: "Name"
+          Value: !Join [ '', [ "Wazuh Windows Agent from " , !Ref AmiAliasWindowsAgent1] ] 
+      NetworkInterfaces:
+        - DeleteOnTermination: 'true'
+          DeviceIndex: '0'
+          SubnetId: !Ref PrivateSubnet
+          PrivateIpAddress: !Ref PrivateAddressWindowsAgent1
+          GroupSet:
+            - Ref: WazuhWindowsSecurityGroup
+      UserData: !Base64 
+        'Fn::Sub': |
+          <powershell>
+          Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.4.4-1.msi -OutFile $env:tmp\wazuh-agent-4.4.4.msi; msiexec.exe /i $env:tmp\wazuh-agent-4.4.4.msi /q WAZUH_MANAGER='${PrivateAddressWazuhServer}' WAZUH_REGISTRATION_PASSWORD='${PasswordWazuhServerAgentEnrollment}' WAZUH_REGISTRATION_SERVER='${PrivateAddressWazuhServer}' 
+          #at least 10 seconds are necessary for the service to be available to start
+          Start-Sleep -Seconds 100  
+          NET START WazuhSvc
+          </powershell>
+    DependsOn: WazuhServerInstance
+
+
+Outputs:
+  VpcId:
+    Description: The VPC ID
+    Value: !Ref LabVPC
+  pfSenseInstancePublicIP:
+    Description: The Public IP address of pfSense
+    Value: !GetAtt pfSenseInstanceEIP.PublicIp
+    Export:
+      Name: !Sub "${AWS::StackName}-pfSense-PublicIp"
+  WazuhServerID:
+    Description: Password of Wazuh Web UI
+    Value: !Ref WazuhServerInstance
