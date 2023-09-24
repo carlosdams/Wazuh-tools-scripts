@@ -1,6 +1,6 @@
 # CloudFormation template for latest Wazuh AIO AMI with Wazuh Agents: Ubuntu 22.04 LTS, Red Hat Enterprise Linux 9.0 and a Windows Server 2022
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
-# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall, all VMs will not have a public IP address, the pfSense firewall will act as a NAT instance
+# Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall, none of the VMs will have a public IP address except by the pfSense firewall that will act as a NAT instance
 
 #version 2023-09-21
 # Author: Carlos Dams
