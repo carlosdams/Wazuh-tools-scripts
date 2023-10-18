@@ -620,9 +620,9 @@ Resources:
     - WazuhLinuxAgentSecurityGroup
     Properties:
       GroupId: !Ref pfSenseSecurityGroup
-      IpProtocol: tcp
+      IpProtocol: -1
       FromPort: 0
-      ToPort: 1024
+      ToPort: 65535
       SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
 # To be able to use the same Security Groups (as a source) created on the previos part
