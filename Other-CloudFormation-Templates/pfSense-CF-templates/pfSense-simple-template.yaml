@@ -1,5 +1,5 @@
 # CloudFormation template for pfSense firewall explained in guide https://docs.netgate.com/manuals/pfsense/en/latest/aws-vpn-appliance-security-gateway-manual.pdf, 
-# It is configured exactly as the section 3 of Virtual Private Cloud in the guide
+# It is configured as the section 3 of Virtual Private Cloud in the guide
 
 #version 2023-10-18
 # Author: Carlos Dams
@@ -7,20 +7,12 @@
 Parameters:
   WorkstationIp:
     Type: String
-    Description: The IP address of the workstation that can RDP and SSH into the instances. Keep 0.0.0.0/0 to allow any IP address.
+    Description: The IP address of the workstation that can SSH into the pfSense firewall. Keep 0.0.0.0/0 to allow any IP address.
     Default: '0.0.0.0/0'
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
     ConstraintDescription: must be a valid IP address of the form x.x.x.x/x
-  PasswordWazuhServerAgentEnrollment:
-    Type: String
-    Description: Password required during the enrollment process of Wazuh Agents https://documentation.wazuh.com/current/user-manual/agent-enrollment/security-options/using-password-authentication.html
-    Default: 'please123'
-    MinLength: 8
-    MaxLength: 64
-    AllowedPattern: "(\\w{8,64})"
-    ConstraintDescription: 'Must have at least 8 characters and a maximum of 64 characters. A word character: [a-zA-Z_0-9]'
   PasswordWebGUIpfSense:
     Type: String
     Description: Password to access pfSense Web GUI, recommended to change after logging in the first time https://docs.netgate.com/pfsense/en/latest/solutions/aws-vpn-appliance/faq.html#how-can-the-random-password-selected-during-provisioning-be-changed 
@@ -29,10 +21,6 @@ Parameters:
     MaxLength: 64
     AllowedPattern: "(\\w{8,64})"
     ConstraintDescription: 'Must have at least 8 characters and a maximum of 64 characters. A word character: [a-zA-Z_0-9]'
-  AmiAliasWazuhServer:
-    Description: AMI alias of Wazuh
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/marketplace/prod-khkzdapwa4w62/latest' #An specific version can be selected sometimes by changing "latest" for the version, ex: "v4.3.8"
   AmiAliaspfSense: 
     Description: AMI alias of pfSense
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
@@ -40,7 +28,7 @@ Parameters:
   CidrBlockVPC: 
     Description: CIDR block of the VPC
     Type: 'String'
-    Default: '172.20.0.0/16'
+    Default: '10.2.0.0/16'
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
@@ -48,7 +36,7 @@ Parameters:
   CidrBlockPublicSubnet: 
     Description: CIDR block of the Public Subnet
     Type: 'String'
-    Default: '172.20.1.0/24'
+    Default: '10.2.0.0/24'
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
@@ -56,23 +44,15 @@ Parameters:
   CidrBlockPrivateSubnet: 
     Description: CIDR block of the Private Subnet
     Type: 'String'
-    Default: '172.20.0.0/24'
+    Default: '10.2.1.0/24'
     MinLength: 9
     MaxLength: 18
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
     ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x
-  PrivateAddressWazuhServer:
-    Description: Private IP Address of Wazuh Server
-    Type: 'String'
-    Default: '172.20.0.10'
-    MinLength: 7
-    MaxLength: 15
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
-    ConstraintDescription: must be a valid IP address of the form x.x.x.x
   PrivateAddresspfSense:
     Description: Private IP Address of pfSense in Private Subnet
     Type: 'String'
-    Default: '172.20.0.5'
+    Default: '10.2.1.5'
     MinLength: 7
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
@@ -80,27 +60,11 @@ Parameters:
   PrivateAddressPublicSubnetpfSense:
     Description: Private IP Address of pfSense in Public Subnet
     Type: 'String'
-    Default: '172.20.1.5'
+    Default: '10.2.0.5'
     MinLength: 7
     MaxLength: 15
     AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})"
     ConstraintDescription: must be a valid IP address of the form x.x.x.x
-  CidrBlockWazuhAgentsEnrollment: 
-    Description: CIDR block of the network that new Wazuh Agents can enroll (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsCommunication
-    Type: 'String'
-    Default: '0.0.0.0/0'
-    MinLength: 9
-    MaxLength: 18
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
-    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
-  CidrBlockWazuhAgentsCommunication: 
-    Description: CIDR block of the network that new Wazuh Agents can communicate (this does not affect the ones in this template), this will likely be the same as CidrBlockWazuhAgentsEnrollment
-    Type: 'String'
-    Default: '0.0.0.0/0'
-    MinLength: 9
-    MaxLength: 18
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
-    ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
   CidrBlockpfSenseGUIAccess: 
     Description: CIDR block of the network that can access the Web GUI Configurator of pfSense
     Type: 'String'
@@ -116,24 +80,6 @@ Parameters:
     MinValue: 0
     MaxValue: 65535
     ConstraintDescription: must be a valid port number from 0 to 65535
-  WazuhServerInstanceType:
-    Description: EC2 Instance type of Wazuh Server AIO #c5a.xlarge vendor recommended, c5a.large or t2.medium to save money
-    Type: String
-    Default: c5a.large
-    AllowedValues:
-    - c5a.large #bare minimum 2vCPU and 4GB RAM
-    - c5a.xlarge #recommended 4vCPU and 8GB RAM
-    - t2.medium #bare minimum 2vCPU and 4GB RAM, cheapest option 
-    - t2.large #2vCPU and 8GB RAM 
-    - t2.xlarge #4vCPU and 16GB RAM
-    ConstraintDescription: must be a valid EC2 instance type.
-  WazuhServerInstanceMarketTypeParameter:
-   Description: Choose between on-demand and spot instances for Wazuh Server.
-   Type: String
-   Default: spot
-   AllowedValues:
-    - spot
-    - on-demand
   pfSenseInstanceType:
     Description: EC2 Instance type of pfSense #m5.large vendor recommended ($0.336/h in N. Viriginia), t3.small or t3.micro good options to save money
     Type: String
@@ -152,21 +98,6 @@ Parameters:
     - spot
     - on-demand
 
-  OpenWazuhAPIToWorkStationIp:
-    Description: If Yes is selected the Wazuh API (port 55000) will be reachable from the WorkstationIp specified.
-    Default: 'No'
-    Type: String
-    AllowedValues:
-      - 'Yes'
-      - 'No'
-  OpenOpenSearchAPIToWorkStationIp:
-    Description: If Yes is selected the OpenSearch API (port 9200) will be reachable from the WorkstationIp specified. It might be neccessary to edit file /etc/wazuh-indexer/opensearch.yml to expose the API
-    Default: 'No'
-    Type: String
-    AllowedValues:
-      - 'Yes'
-      - 'No'
-
   OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess:
     Description: If Yes is selected the CustomPortpfSenseGUIAccess will be added to SG of pfSense and will be reachable by CidrBlockpfSenseGUIAccess.
     Default: 'No'
@@ -176,17 +107,9 @@ Parameters:
       - 'No'
 
 Conditions:
-  OpenWazuhAPI: !Equals 
-    - !Ref OpenWazuhAPIToWorkStationIp
-    - 'Yes'
-  OpenOpenSearchAPI: !Equals 
-    - !Ref OpenOpenSearchAPIToWorkStationIp
-    - 'Yes'
   OpeninboundPortForWebConfiguratorpfSenseSecurityGroup: !Equals
     - !Ref OpenInboundPortForWebConfiguratorpfSenseSecurityGroupToCidrBlockpfSenseGUIAccess
     - 'Yes'
-  WazuhServerIsOnDemand:
-    !Equals [!Ref WazuhServerInstanceMarketTypeParameter, "on-demand"]
   pfSenseInstanceIsOnDemand:
     !Equals [!Ref pfSenseInstanceMarketTypeParameter, "on-demand"]
 
@@ -267,108 +190,11 @@ Resources:
     Description: New EC2 Key pair that will be saved on Parameter Store
     Type: AWS::EC2::KeyPair
     Properties:
-      KeyName: wazuhKeyLab
+      KeyName: pfSenseLab
       Tags: 
         - Key: "Name"
           Value: !Join [ '', [ "Key Pair from " , !Sub "${AWS::StackName}"] ] 
           
-# Wazuh Server AIO
-
-  WazuhServerLaunchTemplate:
-      Type: AWS::EC2::LaunchTemplate
-      Properties:
-        LaunchTemplateName: WazuhServerInstanceLaunchTemplate
-        LaunchTemplateData:
-          ImageId: !Ref AmiAliasWazuhServer
-          InstanceMarketOptions:
-            !If 
-                - WazuhServerIsOnDemand
-                - !Ref "AWS::NoValue"
-                - MarketType:
-                    Ref: WazuhServerInstanceMarketTypeParameter
-
-  WazuhServerInstance:
-    Type: 'AWS::EC2::Instance'
-    Properties:
-      KeyName: !Ref KeyNameToUse
-      InstanceType: !Ref WazuhServerInstanceType
-      LaunchTemplate:
-        Version: 1
-        LaunchTemplateId: !Ref WazuhServerLaunchTemplate
-      Tags:
-        - Key: "Name"
-          Value: !Join [ '', [ "Wazuh AIO from " , !Ref AmiAliasWazuhServer] ] 
-      NetworkInterfaces:
-        - DeleteOnTermination: 'true'
-          DeviceIndex: '0'
-          SubnetId: !Ref PrivateSubnet
-          PrivateIpAddress: !Ref PrivateAddressWazuhServer
-          GroupSet:
-            - Ref: WazuhManagerSecurityGroup
-      UserData: !Base64 
-        'Fn::Sub': |
-          #!/bin/bash -xe
-          sed -i 's/<use_password>no/<use_password>yes/' /var/ossec/etc/ossec.conf
-          echo "${PasswordWazuhServerAgentEnrollment}" > /var/ossec/etc/authd.pass
-          #recommended some time to allow it to start well
-          sleep 50
-          systemctl restart wazuh-manager
-
-#  WazuhServerEIP:
-#    Type: AWS::EC2::EIP
-#    DependsOn: AttachGateway
-#    Properties: 
-#      Domain: vpc
-#      InstanceId: !Ref WazuhServerInstance
-  WazuhManagerSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroup'
-    Properties:
-      GroupDescription: Enable SSH access via port 22, port 443 for Web and ports for Agent connection
-      VpcId: !Ref LabVPC
-      SecurityGroupIngress:
-        - IpProtocol: icmp
-          FromPort: 8
-          ToPort: -1
-          CidrIp: !Sub ${WorkstationIp}
-        - IpProtocol: tcp
-          FromPort: '22'
-          ToPort: '22'
-          CidrIp: !Sub ${WorkstationIp}
-        - IpProtocol: tcp
-          FromPort: '1515'
-          ToPort: '1515'
-          CidrIp: !Sub ${CidrBlockWazuhAgentsEnrollment}
-        - IpProtocol: tcp
-          FromPort: '1514'
-          ToPort: '1514'
-          CidrIp: !Sub ${CidrBlockWazuhAgentsCommunication}
-        - IpProtocol: tcp
-          FromPort: '443'
-          ToPort: '443' #to access Wazuh Web UI
-          CidrIp: 0.0.0.0/0
-
-  WazuhManagerSecurityGroupWazuhAPI:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Condition: OpenWazuhAPI
-    DependsOn: WazuhManagerSecurityGroup
-    Properties:
-      GroupId: !Ref WazuhManagerSecurityGroup
-      IpProtocol: tcp
-      FromPort: 55000
-      ToPort: 55000
-      CidrIp: !Sub ${WorkstationIp}
-
-  WazuhIndexerSecurityGroupOpenSearchAPI:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    Condition: OpenOpenSearchAPI
-    DependsOn: WazuhManagerSecurityGroup
-    Properties:
-      GroupId: !Ref WazuhManagerSecurityGroup
-      IpProtocol: tcp
-      FromPort: 9200
-      ToPort: 9200
-      CidrIp: !Sub ${WorkstationIp}
-
 #pfSense
 
   pfSenseSecurityGroup:
@@ -380,11 +206,11 @@ Resources:
         - IpProtocol: icmp
           FromPort: 8
           ToPort: -1
-          CidrIp: !Sub ${WorkstationIp}
+          CidrIp: 0.0.0.0/0
         - IpProtocol: 50
           FromPort: 0
           ToPort: 0
-          CidrIp: !Sub ${WorkstationIp}
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '22'
           ToPort: '22'
@@ -392,15 +218,15 @@ Resources:
         - IpProtocol: udp
           FromPort: '1194'
           ToPort: '1194'
-          CidrIp: !Sub ${WorkstationIp}
+          CidrIp: 0.0.0.0/0
         - IpProtocol: udp
           FromPort: '500'
           ToPort: '500'
-          CidrIp: !Sub ${WorkstationIp}
+          CidrIp: 0.0.0.0/0
         - IpProtocol: udp
           FromPort: '4500'
           ToPort: '4500'
-          CidrIp: !Sub ${WorkstationIp}
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '443'
           ToPort: '443' #to access pfSense WebConfigurator
@@ -487,51 +313,7 @@ Resources:
            Ref: pfSenseInstanceNetworkInterface1
         DeviceIndex: 1
 
-  pfSenseSecurityGroupAllowAllInboundFromWazuhManagerSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: 
-    - pfSenseSecurityGroup
-    - WazuhManagerSecurityGroup
-    Properties:
-      GroupId: !Ref pfSenseSecurityGroup
-      IpProtocol: -1
-      FromPort: 0
-      ToPort: 65535
-      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
-# To be able to use the same Security Groups (as a source) created on the previos part
-
-  WazuhManagerSecurityGroupSelfReferencePing:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: WazuhManagerSecurityGroup
-    Properties:
-      GroupId: !Ref WazuhManagerSecurityGroup
-      IpProtocol: icmp
-      FromPort: 8
-      ToPort: -1
-      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
-
-  WazuhManagerSecurityGroupSelfReferenceSSHFromManagerSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: WazuhManagerSecurityGroup
-    Properties:
-      GroupId: !Ref WazuhManagerSecurityGroup
-      IpProtocol: tcp
-      FromPort: 22
-      ToPort: 22
-      SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
-
-  WazuhManagerSecurityGroupAllFrompfSenseSecurityGroup:
-    Type: 'AWS::EC2::SecurityGroupIngress'
-    DependsOn: 
-    - WazuhManagerSecurityGroup
-    - pfSenseSecurityGroup
-    Properties:
-      GroupId: !Ref WazuhManagerSecurityGroup
-      IpProtocol: -1
-      FromPort: 0
-      ToPort: 65535
-      SourceSecurityGroupId: !Ref pfSenseSecurityGroup
 
 Outputs:
   VpcId:
@@ -542,6 +324,3 @@ Outputs:
     Value: !GetAtt pfSenseInstanceEIP.PublicIp
     Export:
       Name: !Sub "${AWS::StackName}-pfSense-PublicIp"
-  WazuhServerID:
-    Description: Password of Wazuh Web UI
-    Value: !Ref WazuhServerInstance
