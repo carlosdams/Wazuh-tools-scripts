@@ -625,6 +625,35 @@ Resources:
       ToPort: 65535
       SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
 
+  pfSenseSecurityGroupAllowAllInboundFromWazuhWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  pfSenseSecurityGroupAllowAllInboundFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
+
 # To be able to use the same Security Groups (as a source) created on the previos part
 
   WazuhManagerSecurityGroupSelfReferencePing:
