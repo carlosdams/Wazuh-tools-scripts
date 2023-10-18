@@ -2,7 +2,7 @@
 # Similar machines as in PoC guide: https://documentation.wazuh.com/current/proof-of-concept-guide/index.html
 # Difference with Wazuh-lab-version2-PoC is that this one has a pfSense firewall, none of the VMs will have a public IP address except by the pfSense firewall that will act as a NAT instance
 
-#version 2023-09-21
+#version 2023-10-17
 # Author: Carlos Dams
 Mappings: 
   RegionMap:
@@ -185,7 +185,7 @@ Parameters:
     ConstraintDescription: must be a valid IP address block of the form x.x.x.x/x - Keep 0.0.0.0/0 to allow any IP address.
   CustomPortpfSenseGUIAccess:
     Type: Number
-    Description: The custom port for HTTPS WebConfigurator to use instead of 443.
+    Description: This will add an inbound SG rule in pfSense SG, it could be used as a custom port for HTTPS WebConfigurator to use instead of 443, or to port forward to Wazuh Web UI.
     Default: 7443
     MinValue: 0
     MaxValue: 65535
@@ -620,10 +620,39 @@ Resources:
     - WazuhLinuxAgentSecurityGroup
     Properties:
       GroupId: !Ref pfSenseSecurityGroup
-      IpProtocol: tcp
+      IpProtocol: -1
       FromPort: 0
-      ToPort: 1024
+      ToPort: 65535
       SourceSecurityGroupId: !Ref WazuhManagerSecurityGroup
+
+  pfSenseSecurityGroupAllowAllInboundFromWazuhWindowsSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref WazuhWindowsSecurityGroup
+
+  pfSenseSecurityGroupAllowAllInboundFromWazuhLinuxAgentSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    DependsOn: 
+    - pfSenseSecurityGroup
+    - WazuhManagerSecurityGroup
+    - WazuhWindowsSecurityGroup
+    - WazuhLinuxAgentSecurityGroup
+    Properties:
+      GroupId: !Ref pfSenseSecurityGroup
+      IpProtocol: -1
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref WazuhLinuxAgentSecurityGroup
+
 
 # To be able to use the same Security Groups (as a source) created on the previos part
 
