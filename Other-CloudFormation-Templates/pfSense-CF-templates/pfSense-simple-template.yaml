@@ -1,7 +1,7 @@
-# CloudFormation template for latest Wazuh AIO AMI with a pfSense firewall, 
-# Wazuh instance does not have a public IP address, it is the pfSense firewall that will act as a NAT instance
+# CloudFormation template for pfSense firewall explained in guide https://docs.netgate.com/manuals/pfsense/en/latest/aws-vpn-appliance-security-gateway-manual.pdf, 
+# It is configured exactly as the section 3 of Virtual Private Cloud in the guide
 
-#version 2023-10-17
+#version 2023-10-18
 # Author: Carlos Dams
 
 Parameters:
